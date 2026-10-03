@@ -228,3 +228,136 @@ def test_unrelated_miss_is_still_an_error():
     reply = SNAKE_REPLY + "<<<<<<< SEARCH\n  rainbowMode: true,\n=======\n  rainbowMode: false,\n>>>>>>> REPLACE\n"
     res = apply_reply(code, parse_reply(reply))
     assert not res.ok and "rainbowMode" in res.errors[0]
+
+
+# ---- Round 3: more real replies from the Pi (warm cache, grammar on) ----
+
+SHOOTER_REPLY = """PLAN: Change the player emoji to a dragon 🐉 and the enemy emoji to ghosts 👻.
+<<<<<<< SEARCH
+  player: "🚀",          // the emoji you fly
+  enemy: "👾",           // the emoji you shoot
+=======
+  player: "🐉",          // the emoji you fly
+  enemy: "👻",           // the emoji you shoot
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  drawEmoji(CONFIG.player, player.x, player.y, 40);
+=======
+  drawEmoji(CONFIG.player, player.x, player.y, 40);
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  drawEmoji(CONFIG.enemy, e.x, e.y, 36);
+=======
+  drawEmoji(CONFIG.enemy, e.x, e.y, 36);
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  drawText("Score: " + score + "  -  press SPACE to play again", W / 2, H / 2 + 40, 24);
+=======
+  drawText("Score: " + score + "  -  press SPACE to play again", W / 2, H / 2 + 40, 24);
+>>>>>>> REPLACE
+"""
+
+SWEETS_REPLY = """PLAN: Change the good things to sweets and the bad things to bombs.
+<<<<<<< SEARCH
+  goodThings: ["🍎", "🍌", "🍇", "🍓", "🍉"], // catch these
+=======
+  goodThings: ["🍬", "🍪", "🍰", "🎂", "🧁"], // catch these
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  badThings: ["💣"],                          // avoid these
+=======
+  badThings: ["💣", "🍬"],                          // avoid these
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  drawEmoji(emoji, x, y, size) {
+=======
+  drawEmoji(emoji, x, y, size) {
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+    ctx.fillText(emoji, x, y);
+=======
+    ctx.fillText(emoji, x, y, size);
+>>>>>>> REPLACE
+"""
+
+STAR_REPLY = """PLAN: Add a golden star emoji that gives an extra life when caught.
+<<<<<<< SEARCH
+  lives: CONFIG.lives,
+=======
+  lives: CONFIG.lives + 1,
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  goodThings: ["🍎", "🍌", "🍇", "🍓", "🍉"],
+=======
+  goodThings: ["🍎", "🍌", "🍇", "🍓", "🍉", "⭐️"],
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  badThings: ["💣"],
+=======
+  badThings: ["💣", "⭐️"],
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  drawEmoji(emoji, x, y, size) {
+=======
+  drawEmoji(emoji, x, y, size) {
+    if (emoji === "⭐️") {
+>>>>>>> REPLACE
+"""
+
+
+def test_real_noop_blocks_are_skipped():
+    code = (STARTERS / "space-shooter.html").read_text(encoding="utf-8")
+    res = apply_reply(code, parse_reply(SHOOTER_REPLY))
+    assert res.ok, res.errors
+    assert res.applied == 1 and len(res.skipped) == 3
+    assert 'player: "🐉",          // the emoji you fly' in res.code
+    assert 'enemy: "👻",           // the emoji you shoot' in res.code
+
+
+def test_real_sweets_reply_with_part_of_line_edit():
+    code = (STARTERS / "catch.html").read_text(encoding="utf-8")
+    res = apply_reply(code, parse_reply(SWEETS_REPLY))
+    assert res.ok, res.errors
+    assert res.applied == 3 and len(res.skipped) == 1
+    assert '"🍬", "🍪", "🍰", "🎂", "🧁"' in res.code
+    assert "  ctx.fillText(emoji, x, y, size);" in res.code  # the game's own indentation kept
+    assert "function drawEmoji(emoji, x, y, size) {" in res.code
+
+
+def test_real_star_reply_is_not_fuzzed_into_a_syntax_error():
+    code = (STARTERS / "catch.html").read_text(encoding="utf-8")
+    res = apply_reply(code, parse_reply(STAR_REPLY))
+    assert not res.ok
+    assert "lives: CONFIG.lives" in res.errors[0]
+    assert "  lives = CONFIG.lives;" in res.code  # never turned into "lives: CONFIG.lives + 1,"
+    assert "lives: CONFIG.lives + 1" not in res.code
+    # The part-of-a-line edit kept the "function " in front of it.
+    assert 'function drawEmoji(emoji, x, y, size) {\n  if (emoji === "⭐️") {' in res.code
+
+
+def test_part_of_line_guards():
+    code = "a = 1;\nfoo(b, c); bar(b, c);\nfoo(b, c); baz();\nfunction drawSomethingNice(x) {\n}\n"
+    # too short
+    assert not apply_reply(code, parse_reply("<<<<<<< SEARCH\nbar(b, c);\n=======\nbar(1);\n>>>>>>> REPLACE")).ok
+    # long enough, but appears in two lines: too risky to guess
+    two = "x(); doSomething(b, c);\ny(); doSomething(b, c);\n"
+    res = apply_reply(two, parse_reply("<<<<<<< SEARCH\ndoSomething(b, c);\n=======\nz();\n>>>>>>> REPLACE"))
+    assert not res.ok and res.code == two
+    res = apply_reply(code, parse_reply(
+        "<<<<<<< SEARCH\ndrawSomethingNice(x) {\n=======\ndrawSomethingNice(x, y) {\n>>>>>>> REPLACE"))
+    assert res.ok and "function drawSomethingNice(x, y) {" in res.code
+
+
+def test_single_line_never_fuzzy_matches():
+    code = "function start() {\n  lives = CONFIG.lives;\n}\n"
+    res = apply_reply(code, parse_reply("<<<<<<< SEARCH\n  lives: CONFIG.lives,\n=======\n  lives: 9,\n>>>>>>> REPLACE"))
+    assert not res.ok and res.code == code
+
+
+def test_two_line_fuzzy_still_works():
+    code = "function update() {\n  player.x += CONFIG.playerSpeed;\n  player.y += CONFIG.playerSped;\n}\n"
+    res = apply_reply(code, parse_reply(
+        "<<<<<<< SEARCH\n  player.x += CONFIG.playerSpeed;\n  player.y += CONFIG.playerSpeed;\n=======\n"
+        "  player.x += 2 * CONFIG.playerSpeed;\n  player.y += 2 * CONFIG.playerSpeed;\n>>>>>>> REPLACE"))
+    assert res.ok, res.errors
+    assert "2 * CONFIG.playerSpeed;\n  player.y += 2 *" in res.code

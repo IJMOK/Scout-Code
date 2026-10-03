@@ -53,7 +53,7 @@ def main() -> None:
     ap.add_argument("--key-file", default="/opt/scout/llm-key")
     ap.add_argument("--cases", type=int, default=len(CASES), help="how many requests to try (max 10)")
     ap.add_argument("--max-tokens", type=int, default=900)
-    ap.add_argument("--show", action="store_true", help="print the AI's raw reply for requests that failed")
+    ap.add_argument("--show", action="store_true", help="print the AI's raw replies for requests that needed a retry")
     ap.add_argument("--show-all", action="store_true", help="print every raw reply")
     ap.add_argument("--no-grammar", action="store_true", help="don't force the edit format (to compare)")
     ap.add_argument("--repeat", action="store_true",
@@ -78,49 +78,61 @@ def main() -> None:
         run_cases(client, args)
 
 
+def ask(client: httpx.Client, args, messages: list[dict]) -> tuple[str, dict, float]:
+    body = {"messages": messages, "max_tokens": args.max_tokens, "temperature": 0.2, "cache_prompt": True}
+    if not args.no_grammar:
+        body["grammar"] = EDIT_GRAMMAR
+    start = time.monotonic()
+    r = client.post("/v1/chat/completions", json=body)
+    r.raise_for_status()
+    data = r.json()
+    return data["choices"][0]["message"]["content"], data.get("timings", {}), time.monotonic() - start
+
+
+def show(label: str, reply: str) -> None:
+    print(f"    ┌─ {label} " + "─" * max(4, 58 - len(label)))
+    for line in reply.splitlines():
+        print("    │ " + line)
+    print("    └" + "─" * 61)
+
+
 def run_cases(client: httpx.Client, args) -> None:
+    """Each request is handled like the studio does: one try, then one retry if it didn't fit."""
     print(f"{'#':>2}  {'game':<14} {'prompt':>7} {'read s':>7} {'gen tok':>7} {'tok/s':>6} {'total s':>8}  result")
-    ok = 0
-    totals = []
-    reads = []
+    first_ok = with_retry = 0
+    totals, reads = [], []
     for i, (starter, request) in enumerate(CASES[: args.cases], 1):
         code = (ROOT / "server" / "starters" / f"{starter}.html").read_text(encoding="utf-8")
-        start = time.monotonic()
-        body = {
-            "messages": prompts.edit_messages(code, request),
-            "max_tokens": args.max_tokens,
-            "temperature": 0.2,
-            "cache_prompt": True,
-        }
-        if not args.no_grammar:
-            body["grammar"] = EDIT_GRAMMAR
-        r = client.post("/v1/chat/completions", json=body)
-        r.raise_for_status()
-        total = time.monotonic() - start
-        data = r.json()
-        reply = data["choices"][0]["message"]["content"]
-        t = data.get("timings", {})
-        result = apply_reply(code, parse_reply(reply))
-        if result.ok:
-            verdict = "✅ applied" + (f" ({len(result.skipped)} repeated edit{'s' if len(result.skipped) != 1 else ''} skipped)" if result.skipped else "")
-        else:
-            verdict = f"❌ {(result.errors or ['no edits'])[0][:50]}"
-        ok += result.ok
-        totals.append(total)
+        reply, t, total = ask(client, args, prompts.edit_messages(code, request))
         reads.append(t.get("prompt_ms", 0) / 1000)
+        result = apply_reply(code, parse_reply(reply))
+        retry_reply = None
+        if result.ok:
+            first_ok += 1
+            with_retry += 1
+            verdict = "✅ first try"
+        else:
+            error = " ".join(result.errors)
+            retry_reply, t2, total2 = ask(client, args, prompts.retry_messages(code, request, error))
+            total += total2
+            again = apply_reply(code, parse_reply(retry_reply), allow_partial=True)
+            if again.ok:
+                with_retry += 1
+                verdict = "⚠️ partly, after retry" if again.partial else "✅ after retry"
+            else:
+                verdict = f"❌ {(again.errors or ['no edits'])[0][:50]}"
+        totals.append(total)
         print(f"{i:>2}  {starter:<14} {t.get('prompt_n', 0):>7} {t.get('prompt_ms', 0) / 1000:>7.1f} "
               f"{t.get('predicted_n', 0):>7} {t.get('predicted_per_second', 0):>6.1f} {total:>8.1f}  {verdict}")
-        if args.show_all or (args.show and not result.ok):
-            print("    ┌─ AI reply " + "─" * 50)
-            for line in reply.splitlines():
-                print("    │ " + line)
-            print("    └" + "─" * 61)
+        if args.show_all or (args.show and retry_reply is not None):
+            show("AI reply" if retry_reply is None else "first try", reply)
+            if retry_reply is not None:
+                show(f"retry (told: {' '.join(result.errors)[:40]}…)", retry_reply)
 
     n = len(totals)
-    print(f"\nEdits that applied: {ok}/{n}    Average per request: {sum(totals) / n:.0f}s "
-          f"(of which reading the game: {sum(reads) / n:.0f}s)")
-    print("(In the studio, a failed edit gets one automatic retry, and the browser's test-play")
-    print(" catches crashes and asks the AI to fix them.)\n")
+    print(f"\nApplied first try: {first_ok}/{n}    With the automatic retry: {with_retry}/{n}")
+    print(f"Average per request: {sum(totals) / n:.0f}s (of which reading the game: {sum(reads) / n:.0f}s)")
+    print("(In the studio the browser then test-plays each new version and asks the AI to fix any crash.)\n")
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ indentation or trailing spaces differ.
 from __future__ import annotations
 
 import re
+import textwrap
 from dataclasses import dataclass, field
 
 SEARCH_RE = re.compile(r"^\s*(?:<{3,}\s*SEARCH|SEARCH\s*:)\s*$", re.IGNORECASE)
@@ -127,6 +128,9 @@ def apply_blocks(code: str, blocks: list[Block]) -> ApplyResult:
             errors.append(f"Edit {i}: the SEARCH part was empty.")
             continue
         first = block.search.strip().splitlines()[0][:80]
+        if _same_code(block.search, block.replace):
+            skipped.append(f"Edit {i}: didn't change anything: {first!r}")
+            continue
         search_keys = {_loose(ln) for ln in block.search.split("\n") if _loose(ln)}
         # Small models often edit the same line twice. The first edit already changed
         # it, so skip this one (before fuzzy matching could land it on the new line).
@@ -207,43 +211,94 @@ def _anchor_replace(code: str, snippet: str) -> str | None:
 
 
 def _replace_once(code: str, search: str, replace: str, fuzzy: bool = True) -> str | None:
-    # 1. Exact match.
+    """Replace one occurrence of `search`, trying the safest way of matching first."""
+    # 1. Exact match. A piece of a line is only trusted when it's long and unique,
+    #    the same rules as step 4.
     idx = code.find(search)
     if idx != -1:
         end = idx + len(search)
-        whole_lines = (idx == 0 or code[idx - 1] == "\n") and code[end:end + 1] == "\n"
-        if not replace and whole_lines:
-            end += 1  # deleting whole lines: don't leave a blank line behind
-        return code[:idx] + replace + code[end:]
+        starts_line = idx == 0 or code[idx - 1] == "\n"
+        ends_line = end == len(code) or code[end] == "\n" or search.endswith("\n")
+        part_of_line = not (starts_line and ends_line)
+        if not part_of_line or (len(search.strip()) >= MIN_PART_LINE and code.count(search) == 1):
+            if not replace and starts_line and code[end:end + 1] == "\n":
+                end += 1  # deleting whole lines: don't leave a blank line behind
+            return code[:idx] + replace + code[end:]
 
-    # 2. Line-by-line match ignoring indentation and trailing spaces.
     code_lines = code.split("\n")
-    search_lines = [ln for ln in search.split("\n")]
-    while search_lines and not search_lines[0].strip():
-        search_lines.pop(0)
-    while search_lines and not search_lines[-1].strip():
-        search_lines.pop()
+    search_lines = _trim_blank(search.split("\n"))
     if not search_lines:
         return None
-    want = [_norm(ln) for ln in search_lines]
-    n = len(want)
-    for start in range(len(code_lines) - n + 1):
-        if all(_norm(code_lines[start + k]) == want[k] for k in range(n)):
-            indent = _reindent(code_lines[start], search_lines[0])
-            repl_lines = replace.split("\n") if replace else []
-            repl_lines = [_shift(ln, indent) for ln in repl_lines]
-            return "\n".join(code_lines[:start] + repl_lines + code_lines[start + n:])
+    n = len(search_lines)
 
-    # 3. Small models often retype lines without their // comments, or with
-    #    small slips. Find the stretch of the game that matches best.
-    if not fuzzy:
+    # 2. Same lines, ignoring spacing.  3. ...and ignoring // comments and trailing , or ;
+    for key in (_norm, _loose):
+        want = [key(ln) for ln in search_lines]
+        for start in range(len(code_lines) - n + 1):
+            if all(key(code_lines[start + k]) == want[k] for k in range(n)):
+                return _swap_lines(code_lines, start, n, search_lines[0], replace)
+
+    # 4. One line that is part of a longer line, e.g. the model wrote
+    #    "drawEmoji(emoji, x, y, size) {" for "function drawEmoji(emoji, x, y, size) {".
+    if n == 1:
+        swapped = _replace_part_of_line(code_lines, search_lines[0].strip(), replace)
+        if swapped is not None:
+            return swapped
+
+    # 5. Small slips in a block of several lines: find the stretch that matches best.
+    #    Never for a single line: there a one-character change ("lives: x," vs
+    #    "lives = x;") can be the whole difference between working and broken.
+    if not fuzzy or sum(1 for ln in search_lines if ln.strip()) < 2:
         return None
     start = _best_window(code_lines, search_lines)
     if start is None:
         return None
-    indent = _reindent(code_lines[start], search_lines[0])
+    return _swap_lines(code_lines, start, n, search_lines[0], replace)
+
+
+def _trim_blank(lines: list[str]) -> list[str]:
+    while lines and not lines[0].strip():
+        lines = lines[1:]
+    while lines and not lines[-1].strip():
+        lines = lines[:-1]
+    return lines
+
+
+def _swap_lines(code_lines: list[str], start: int, n: int, model_first: str, replace: str) -> str:
+    indent = _reindent(code_lines[start], model_first)
     repl_lines = [_shift(ln, indent) for ln in (replace.split("\n") if replace else [])]
     return "\n".join(code_lines[:start] + repl_lines + code_lines[start + n:])
+
+
+MIN_PART_LINE = 12  # shorter fragments ("x += 1;") could be anywhere
+
+
+def _replace_part_of_line(code_lines: list[str], fragment: str, replace: str) -> str | None:
+    if len(fragment) < MIN_PART_LINE:
+        return None
+    hits = [i for i, line in enumerate(code_lines) if fragment in line]
+    if len(hits) != 1:
+        return None  # nowhere, or too many places to be sure
+    i = hits[0]
+    line = code_lines[i]
+    at = line.index(fragment)
+    prefix, suffix = line[:at], line[at + len(fragment):]
+    new = textwrap.dedent(replace).strip("\n").split("\n") if replace.strip() else []
+    if not new:
+        rest = (prefix + suffix).rstrip()
+        out = [rest] if rest.strip() else []
+    else:
+        indent = _leading(line)
+        out = [prefix + new[0].lstrip()] + [indent + ln if ln.strip() else ln for ln in new[1:]]
+        out[-1] += suffix
+    return "\n".join(code_lines[:i] + out + code_lines[i + 1:])
+
+
+def _same_code(a: str, b: str) -> bool:
+    """Do two snippets say the same thing (ignoring spacing and comments)?"""
+    def key(text: str) -> list[str]:
+        return [k for k in (_loose(ln) for ln in text.split("\n")) if k]
+    return key(a) == key(b)
 
 
 def _loose(line: str) -> str:
