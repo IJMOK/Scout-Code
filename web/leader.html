@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout Code: Leaders</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  .dash { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); }
+  .dash .wide { grid-column: 1 / -1; }
+  .workers { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .worker { border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .scroll { max-height: 360px; overflow: auto; }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <a class="logo" href="/leader">🧭 Leader dashboard</a>
+  <span class="spacer"></span>
+  <a class="btn small" href="/awards" target="_blank">🏆 Awards screen</a>
+  <a class="btn small" href="/arcade" target="_blank">🕹️ Arcade</a>
+</header>
+
+<main class="page" style="max-width:1300px">
+  <form class="card hidden" id="login" style="max-width:420px;margin:40px auto">
+    <h2>Leader login</h2>
+    <p class="muted">The leader PIN is printed when the portal starts, and saved in <code>data/leader-pin.txt</code> on the basecamp Pi.</p>
+    <input id="pin" type="password" inputmode="numeric" placeholder="Leader PIN" autocomplete="off">
+    <p><button class="btn primary" type="submit">Log in</button></p>
+  </form>
+
+  <div class="dash hidden" id="dash">
+    <section class="card">
+      <h2>Join code</h2>
+      <div class="joincode" id="join-code">····</div>
+      <p class="muted">Teams go to <b id="portal-url"></b> and type this code.</p>
+      <p><button class="btn small" id="btn-newcode">New code</button></p>
+      <label for="event-name">Event name</label>
+      <div style="display:flex;gap:8px"><input id="event-name"><button class="btn small" id="btn-name">Save</button></div>
+    </section>
+
+    <section class="card">
+      <h2>Controls</h2>
+      <div class="toggle-row">
+        <button class="btn" id="t-ai"></button>
+        <button class="btn" id="t-vote"></button>
+        <button class="btn" id="t-awards"></button>
+      </div>
+      <p class="muted" style="font-size:14px">Pause the AI while you talk to everyone. Close voting, then reveal the awards on the projector.</p>
+      <p><a class="btn primary" href="/api/leader/export.zip">💾 Download all games (zip for USB sticks)</a></p>
+      <p class="muted" id="avg"></p>
+    </section>
+
+    <section class="card wide">
+      <h2>AI workers (Raspberry Pis)</h2>
+      <div class="workers" id="workers"></div>
+    </section>
+
+    <section class="card">
+      <h2>Queue</h2>
+      <div class="scroll"><table><thead><tr><th>Team</th><th>Kind</th><th>Status</th><th></th></tr></thead><tbody id="queue"></tbody></table></div>
+    </section>
+
+    <section class="card">
+      <h2>Teams</h2>
+      <div class="scroll"><table><thead><tr><th>Team</th><th>PIN</th><th>Games</th><th>Ideas ✓/all</th><th></th></tr></thead><tbody id="teams"></tbody></table></div>
+    </section>
+
+    <section class="card wide">
+      <h2>Recent AI requests</h2>
+      <p class="muted" style="font-size:14px">Keep an eye on what scouts are asking for. Great for spotting teams who are stuck.</p>
+      <div class="scroll"><table><thead><tr><th>#</th><th>Team</th><th>Asked</th><th>AI's plan / result</th><th>Status</th><th>Worker</th><th>Time</th></tr></thead><tbody id="recent"></tbody></table></div>
+    </section>
+
+    <section class="card wide">
+      <h2>Games</h2>
+      <div class="scroll"><table><thead><tr><th>Game</th><th>Team</th><th>Arcade</th><th>Rating</th><th></th></tr></thead><tbody id="games"></tbody></table></div>
+    </section>
+  </div>
+</main>
+
+<script src="/static/js/common.js"></script>
+<script src="/static/js/leader.js"></script>
+</body>
+</html>

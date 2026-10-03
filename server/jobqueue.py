@@ -191,12 +191,13 @@ class JobQueue:
         return sum(recent) / len(recent)
 
     def broadcast_positions(self) -> None:
-        queued = self.db.all("SELECT id, team_id FROM jobs WHERE status='queued' ORDER BY priority, id")
+        queued = self.db.all("SELECT id, team_id, kind FROM jobs WHERE status='queued' ORDER BY priority, id")
         n_workers = max(1, sum(1 for w in self.workers if w.healthy))
         avg = self.average_seconds()
         for pos, job in enumerate(queued, 1):
             eta = int(avg * ((pos - 1) // n_workers + 1))
-            self.hub.publish(job["team_id"], {"type": "position", "job_id": job["id"], "position": pos, "eta": eta})
+            self.hub.publish(job["team_id"], {"type": "position", "job_id": job["id"], "kind": job["kind"],
+                                              "position": pos, "eta": eta})
 
     # ---------------------------------------------------------------- running
     async def _run(self, job: dict, worker: Worker) -> None:
@@ -218,7 +219,7 @@ class JobQueue:
                     self._event(team_id, job_id, "writing")
                 reply_parts.append(chunk)
                 n_chunks += 1
-                self.hub.publish(team_id, {"type": "token", "job_id": job_id, "text": chunk})
+                self.hub.publish(team_id, {"type": "token", "job_id": job_id, "kind": job["kind"], "text": chunk})
             reply = "".join(reply_parts)
 
             if first_token_at:
@@ -231,7 +232,7 @@ class JobQueue:
                 return
             if job["kind"] == "explain":
                 self._finish(job_id, "done", message=reply.strip())
-                self.hub.publish(team_id, {"type": "explain", "job_id": job_id, "text": reply.strip()})
+                self.hub.publish(team_id, {"type": "explain", "job_id": job_id, "kind": "explain", "text": reply.strip()})
             else:
                 self._handle_edit_reply(job, reply)
         except Exception as e:  # the Pi fell over, the network dropped, etc.
@@ -327,7 +328,8 @@ class JobQueue:
                         (status, message, now(), job_id))
 
     def _event(self, team_id: int, job_id: int, stage: str, **extra) -> None:
-        self.hub.publish(team_id, {"type": "job", "job_id": job_id, "stage": stage, **extra})
+        kind = self.db.value("SELECT kind FROM jobs WHERE id=?", (job_id,))
+        self.hub.publish(team_id, {"type": "job", "job_id": job_id, "kind": kind, "stage": stage, **extra})
 
     # ------------------------------------------------------------------ health
     async def _health_loop(self) -> None:

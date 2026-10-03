@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout Code: Awards</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  body { font-size: 20px; }
+  .wait { text-align: center; font-size: 36px; margin-top: 15vh; }
+  .wait .big { font-size: 120px; }
+</style>
+</head>
+<body>
+<main class="page" style="max-width:1300px">
+  <h1 id="title" style="text-align:center;font-size:48px">🏆 Awards</h1>
+  <div class="wait" id="wait"><div class="big">🥁</div>The awards are coming soon…</div>
+  <div class="awards hidden" id="awards"></div>
+  <section class="card hidden" id="board" style="margin-top:28px">
+    <h2>⭐ Leaderboard</h2>
+    <table><tbody id="board-rows"></tbody></table>
+  </section>
+</main>
+<script src="/static/js/common.js"></script>
+<script>
+let shown = false;
+
+async function load() {
+  const data = await api("/api/awards");
+  $("#title").textContent = `🏆 ${data.event_name}`;
+  if (!data.revealed || !data.awards.length) {
+    $("#wait").classList.remove("hidden");
+    $("#wait").lastChild.textContent = data.revealed ? "No votes yet!" : "The awards are coming soon…";
+    $("#awards").classList.add("hidden");
+    $("#board").classList.add("hidden");
+    shown = false;
+    return;
+  }
+  if (shown) return; // don't reset cards that have been revealed
+  shown = true;
+  $("#wait").classList.add("hidden");
+  $("#awards").classList.remove("hidden");
+  $("#awards").innerHTML = data.awards.map(a => `
+    <div class="card award sealed" tabindex="0">
+      <div class="label">${esc(a.label)}</div>
+      <div class="winner">${esc(a.game.title)}</div>
+      <div class="detail">by ${esc(a.game.team_emoji)} ${esc(a.game.team_name)}<br><span class="muted">${esc(a.detail)}</span></div>
+    </div>`).join("");
+  $all(".award").forEach(card => {
+    const reveal = () => {
+      if (!card.classList.contains("sealed")) return;
+      card.classList.remove("sealed");
+      card.classList.add("revealed");
+      if ($all(".award.sealed").length === 0) $("#board").classList.remove("hidden");
+    };
+    card.onclick = reveal;
+    card.onkeydown = e => { if (e.key === "Enter" || e.key === " ") reveal(); };
+  });
+  $("#board-rows").innerHTML = data.leaderboard.map((g, i) => `<tr>
+    <td style="font-size:28px">${["🥇", "🥈", "🥉"][i] || i + 1}</td>
+    <td><b>${esc(g.title)}</b></td><td>${esc(g.team_emoji)} ${esc(g.team_name)}</td>
+    <td><span class="stars">${starsText(g.avg_stars)}</span> ${g.avg_stars} (${g.ratings})</td></tr>`).join("");
+}
+
+load().catch(err => toast(err.message, true));
+setInterval(() => load().catch(() => {}), 4000);
+</script>
+</body>
+</html>

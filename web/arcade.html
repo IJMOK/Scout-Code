@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout Code: Arcade</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="logo" href="/arcade">🕹️ Arcade</a>
+  <span class="team" id="team-label"></span>
+  <span class="spacer"></span>
+  <span id="voting-state"></span>
+  <a class="btn small" href="/studio">🎮 Studio</a>
+</header>
+
+<main class="page">
+  <h1 id="event-name">Arcade</h1>
+  <p class="muted" id="intro">Play everyone's games! Give each one stars and a reaction, and vote for your favourites.</p>
+  <div class="grid" id="games"></div>
+  <p class="muted hidden" id="empty" style="text-align:center;font-size:20px;margin-top:40px">No games yet… go and build one! 🚀</p>
+</main>
+
+<div class="modal-back hidden" id="play-modal">
+  <div class="modal wide">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <h2 id="play-title" style="margin:0"></h2>
+      <span class="muted" id="play-by"></span>
+      <span class="spacer" style="flex:1"></span>
+      <button class="btn small" id="btn-restart">🔄 Restart</button>
+      <button class="btn small" data-close>✖ Close</button>
+    </div>
+    <p class="muted" id="play-desc"></p>
+    <div class="player" id="player"></div>
+    <div id="rate-area"></div>
+  </div>
+</div>
+
+<script src="/static/js/common.js"></script>
+<script src="/static/js/arcade.js"></script>
+</body>
+</html>

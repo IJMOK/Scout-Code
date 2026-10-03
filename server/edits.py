@@ -130,7 +130,11 @@ def _replace_once(code: str, search: str, replace: str) -> str | None:
     # 1. Exact match.
     idx = code.find(search)
     if idx != -1:
-        return code[:idx] + replace + code[idx + len(search):]
+        end = idx + len(search)
+        whole_lines = (idx == 0 or code[idx - 1] == "\n") and code[end:end + 1] == "\n"
+        if not replace and whole_lines:
+            end += 1  # deleting whole lines: don't leave a blank line behind
+        return code[:idx] + replace + code[end:]
 
     # 2. Line-by-line match ignoring indentation and trailing spaces.
     code_lines = code.split("\n")

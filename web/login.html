@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout Code: Join</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/css/app.css">
+<style>
+  .login-wrap { max-width: 560px; margin: 0 auto; padding: 32px 16px; }
+  .hero { text-align: center; margin-bottom: 20px; }
+  .hero .big { font-size: 64px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 14px; }
+  .tabs .btn { flex: 1; }
+  .tabs .btn.on { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .emoji-pick { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+  .emoji-pick button { font-size: 28px; background: var(--bg); border: 2px solid transparent; border-radius: 10px; cursor: pointer; padding: 4px; }
+  .emoji-pick button.on { border-color: var(--brand); background: var(--brand-soft); }
+  .pin-show { font-size: 72px; font-weight: 800; letter-spacing: 12px; color: var(--brand); text-align: center; }
+  .code-input { text-transform: uppercase; letter-spacing: 6px; font-size: 24px; font-weight: 700; text-align: center; }
+</style>
+</head>
+<body>
+<div class="login-wrap">
+  <div class="hero">
+    <div class="big">🎮🤖</div>
+    <h1 id="event-name">Scout Code</h1>
+    <p class="muted">Team up with an AI to build your own video game!</p>
+  </div>
+
+  <div class="card" id="forms">
+    <div class="tabs">
+      <button class="btn on" data-tab="new">✨ New team</button>
+      <button class="btn" data-tab="back">🔑 Log back in</button>
+    </div>
+
+    <form id="new-form">
+      <label for="team-name">Team name</label>
+      <input id="team-name" maxlength="24" placeholder="e.g. The Pixel Wolves" required autocomplete="off">
+      <label>Pick your team emoji</label>
+      <div class="emoji-pick" id="emoji-pick"></div>
+      <label for="join-code">Join code <span class="muted">(on the big screen)</span></label>
+      <input id="join-code" class="code-input" maxlength="4" required autocomplete="off">
+      <p><button class="btn primary big" style="width:100%" type="submit">Let's go! 🚀</button></p>
+    </form>
+
+    <form id="back-form" class="hidden">
+      <label for="back-name">Your team</label>
+      <select id="back-name"></select>
+      <label for="back-pin">Team PIN</label>
+      <input id="back-pin" class="code-input" maxlength="4" inputmode="numeric" required autocomplete="off">
+      <p><button class="btn primary big" style="width:100%" type="submit">Log in</button></p>
+    </form>
+  </div>
+
+  <div class="card hidden" id="pin-card" style="text-align:center">
+    <h2>Welcome, <span id="welcome-team"></span>!</h2>
+    <p>This is your <b>team PIN</b>. Write it down. You need it to log back in on another laptop.</p>
+    <div class="pin-show" id="pin-show"></div>
+    <p><a class="btn primary big" href="/studio">I've written it down, start building! →</a></p>
+  </div>
+
+  <p style="text-align:center;margin-top:20px"><a href="/arcade">🕹️ Just here to play? Visit the Arcade</a></p>
+</div>
+<script src="/static/js/common.js"></script>
+<script>
+let chosenEmoji = null;
+
+async function init() {
+  const info = await api("/api/info");
+  $("#event-name").textContent = info.event_name;
+  document.title = info.event_name;
+  if (info.team) location.href = "/studio";
+  const pick = $("#emoji-pick");
+  for (const e of info.team_emojis) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = e;
+    b.onclick = () => {
+      chosenEmoji = e;
+      $all("button", pick).forEach(x => x.classList.toggle("on", x === b));
+    };
+    pick.appendChild(b);
+  }
+  pick.firstChild.click();
+}
+
+$all(".tabs .btn").forEach(btn => btn.onclick = async () => {
+  $all(".tabs .btn").forEach(b => b.classList.toggle("on", b === btn));
+  $("#new-form").classList.toggle("hidden", btn.dataset.tab !== "new");
+  $("#back-form").classList.toggle("hidden", btn.dataset.tab !== "back");
+  if (btn.dataset.tab === "back") {
+    const names = await api("/api/teams/names");
+    $("#back-name").innerHTML = names.length
+      ? names.map(n => `<option>${esc(n)}</option>`).join("")
+      : "<option disabled>No teams yet</option>";
+  }
+});
+
+$("#new-form").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    const res = await api("/api/teams", { method: "POST", body: {
+      name: $("#team-name").value, emoji: chosenEmoji, join_code: $("#join-code").value,
+    }});
+    $("#forms").classList.add("hidden");
+    $("#pin-card").classList.remove("hidden");
+    $("#welcome-team").textContent = res.team.emoji + " " + res.team.name;
+    $("#pin-show").textContent = res.pin;
+  } catch (err) { toast(err.message, true); }
+};
+
+$("#back-form").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    await api("/api/login", { method: "POST", body: { name: $("#back-name").value, pin: $("#back-pin").value } });
+    location.href = "/studio";
+  } catch (err) { toast(err.message, true); }
+};
+
+init().catch(err => toast(err.message, true));
+</script>
+</body>
+</html>

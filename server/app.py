@@ -420,6 +420,7 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
             g["avg_stars"] = round(g["avg_stars"], 2) if g["avg_stars"] else None
             g["reactions"] = {r["reaction"]: r["n"] for r in reactions if r["game_id"] == g["id"]}
             g["my_rating"] = mine.get(g["id"], {}).get("stars")
+            g["my_reaction"] = mine.get(g["id"], {}).get("reaction") or ""
             g["my_votes"] = [c for c, gid in my_votes.items() if gid == g["id"]]
             g["is_mine"] = viewer_team == g["team_id"]
         return rows
@@ -466,7 +467,7 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
         if rated:
             best = max(rated, key=lambda g: (g["avg_stars"], g["ratings"]))
             awards.append({"category": "stars", "label": "⭐ Top Rated", "game": best,
-                           "detail": f"{best['avg_stars']} stars from {best['ratings']} teams"})
+                           "detail": f"{best['avg_stars']} stars from {best['ratings']} team{'s' if best['ratings'] != 1 else ''}"})
         for cat, label in AWARD_CATEGORIES.items():
             counts = db.all("SELECT game_id, COUNT(*) AS n FROM votes WHERE category=? GROUP BY game_id "
                             "ORDER BY n DESC, game_id", (cat,))

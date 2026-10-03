@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scout Code: Studio</title>
+<link rel="icon" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/vendor/prism-tomorrow.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="logo" href="/studio">🎮 Scout Code</a>
+  <span class="team" id="team-label"></span>
+  <span id="game-title" style="font-weight:700"></span>
+  <span class="spacer"></span>
+  <button class="btn small hidden" id="btn-history">🕘 History</button>
+  <button class="btn small hidden" id="btn-publish">🌟 Publish</button>
+  <a class="btn small" href="/studio">📂 My games</a>
+  <a class="btn small" href="/arcade" target="_blank">🕹️ Arcade</a>
+  <button class="btn small" id="btn-logout">Log out</button>
+</header>
+
+<!-- Pick or start a game -->
+<main class="page hidden" id="picker">
+  <section id="my-games-section" class="hidden">
+    <h2>Your games</h2>
+    <div class="grid" id="my-games"></div>
+    <hr style="margin:28px 0;border:0;border-top:1px solid var(--line)">
+  </section>
+  <h2>Start a new game</h2>
+  <p class="muted">Pick a game to start from. Then ask the AI to change it into something amazing!</p>
+  <div class="grid" id="starters"></div>
+</main>
+
+<!-- The studio -->
+<main class="studio hidden" id="studio">
+  <div class="left">
+    <section class="panel play-panel">
+      <div class="panel-head">
+        <h2>▶️ Play</h2>
+        <span class="muted" style="font-size:14px">Click the game, then use the keyboard</span>
+        <span class="spacer"></span>
+        <button class="btn small" id="btn-restart">🔄 Restart</button>
+      </div>
+      <div class="play-wrap" id="play-wrap"></div>
+    </section>
+
+    <section class="panel ask-panel">
+      <div class="panel-head"><h2>🤖 Ask the AI</h2><span class="spacer"></span><span class="muted" id="ai-state" style="font-size:14px"></span></div>
+      <div class="ask-body">
+        <div class="ideas" id="ideas"></div>
+        <form class="ask-row" id="ask-form">
+          <textarea id="ask-input" maxlength="300" placeholder="Tell the AI what to change… e.g. 'make the enemies pink and add a boss'"></textarea>
+          <button class="btn primary big" id="ask-btn" type="submit">Go!</button>
+        </form>
+        <div id="agent" class="hidden">
+          <div class="steps" id="steps"></div>
+          <p class="agent-msg" id="agent-msg"></p>
+          <div class="test-box hidden" id="test-box"><div id="test-holder"></div><span>🧪 The AI is test-playing your game to check it works…</span></div>
+          <details id="notebook-wrap" open>
+            <summary class="muted" style="cursor:pointer">📓 What the AI is writing</summary>
+            <div class="notebook" id="notebook"></div>
+          </details>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="panel code-panel">
+    <div class="panel-head">
+      <h2>🧑‍💻 The code</h2>
+      <span class="legend"><span class="swatch"></span> = just changed</span>
+      <span class="spacer"></span>
+      <button class="btn small" id="btn-explain">💬 Explain this</button>
+    </div>
+    <div class="explain-bubble hidden" id="explain"><button class="close" id="explain-close" aria-label="Close">×</button><div id="explain-text"></div></div>
+    <div class="code-scroll" id="code"></div>
+  </section>
+</main>
+
+<!-- History -->
+<div class="modal-back hidden" id="history-modal">
+  <div class="modal">
+    <h2>🕘 Game history</h2>
+    <p class="muted">Every change the AI made. Jump back to any version that worked.</p>
+    <ol class="history" id="history-list"></ol>
+    <p><button class="btn" data-close>Close</button></p>
+  </div>
+</div>
+
+<!-- Publish -->
+<div class="modal-back hidden" id="publish-modal">
+  <form class="modal" id="publish-form">
+    <h2>🌟 Publish to the Arcade</h2>
+    <p class="muted">Everyone will be able to play and rate the version you're looking at now. You can keep improving it and publish again later.</p>
+    <label for="pub-title">Game name</label>
+    <input id="pub-title" maxlength="40" required>
+    <label for="pub-desc">How to play (one line)</label>
+    <input id="pub-desc" maxlength="200" placeholder="Arrow keys to move, catch the pizzas!">
+    <p style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn primary" type="submit">Publish!</button>
+      <button class="btn" type="button" data-close>Cancel</button>
+      <button class="btn danger hidden" type="button" id="btn-unpublish">Take it out of the Arcade</button>
+    </p>
+  </form>
+</div>
+
+<script src="/static/vendor/prism.js"></script>
+<script src="/static/vendor/diff.min.js"></script>
+<script src="/static/vendor/acorn.js"></script>
+<script src="/static/js/common.js"></script>
+<script src="/static/js/codeview.js"></script>
+<script src="/static/js/tester.js"></script>
+<script src="/static/js/studio.js"></script>
+</body>
+</html>

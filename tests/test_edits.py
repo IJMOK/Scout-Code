@@ -80,3 +80,10 @@ def test_unfinished_block_is_dropped():
 def test_no_edits():
     res = apply_reply(GAME, parse_reply("I think the game is great already!"))
     assert not res.ok
+
+
+def test_deleting_lines_leaves_no_blank_line():
+    reply = parse_reply("<<<<<<< SEARCH\n  speed: 5,\n=======\n>>>>>>> REPLACE")
+    res = apply_reply(GAME, reply)
+    assert res.ok
+    assert '  player: "🙂",\n};' in res.code
