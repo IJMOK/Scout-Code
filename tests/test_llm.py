@@ -97,6 +97,7 @@ class _Settings:
     temperature = 0.2
     edit_max_tokens = 200
     explain_max_tokens = 100
+    use_grammar = True
 
 
 def test_job_fails_over_to_the_other_pi(fake, tmp_path):
@@ -130,3 +131,19 @@ def test_job_fails_over_to_the_other_pi(fake, tmp_path):
     assert workers[0].healthy is False
     code = db.value("SELECT code FROM versions WHERE id=?", (job["result_version_id"],))
     assert '"🐱"' in code
+    assert "grammar" in fake[1].state.requests[-1]  # edits are format-constrained
+
+
+def test_grammar_sent_only_when_asked(fake):
+    from server.grammar import EDIT_GRAMMAR
+
+    url, app = fake
+    asyncio.run(collect(LlamaServer(url, api_key=KEY), [{"role": "user", "content": "hi"}]))
+    assert "grammar" not in app.state.requests[-1]
+
+    async def with_grammar():
+        client = LlamaServer(url, api_key=KEY)
+        return "".join([c async for c in client.stream_chat([{"role": "user", "content": "hi"}], 50, 0.2,
+                                                            grammar=EDIT_GRAMMAR)])
+    asyncio.run(with_grammar())
+    assert app.state.requests[-1]["grammar"] == EDIT_GRAMMAR

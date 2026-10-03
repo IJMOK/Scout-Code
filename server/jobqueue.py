@@ -23,10 +23,13 @@ import httpx
 from . import prompts
 from .db import DB, now
 from .edits import apply_reply, parse_reply
+from .grammar import EDIT_GRAMMAR
 
 log = logging.getLogger("scout.queue")
 
-PRIORITY = {"fix": 0, "edit": 1, "explain": 2}
+# fix = the new version crashed; retry = the AI's answer couldn't be applied.
+PRIORITY = {"fix": 0, "retry": 0, "edit": 1, "explain": 2}
+EDIT_KINDS = ("edit", "fix", "retry")
 ACTIVE = ("queued", "running", "testing")
 STALE_TEST_SECONDS = 180
 MAX_FIX_ATTEMPTS = 1
@@ -115,7 +118,7 @@ class JobQueue:
         return task
 
     # ------------------------------------------------------------- submitting
-    def active_job(self, team_id: int, kinds: tuple[str, ...] = ("edit", "fix")) -> dict | None:
+    def active_job(self, team_id: int, kinds: tuple[str, ...] = EDIT_KINDS) -> dict | None:
         marks = ",".join("?" * len(kinds))
         job = self.db.one(
             f"SELECT * FROM jobs WHERE team_id=? AND kind IN ({marks}) AND status IN ('queued','running','testing') "
@@ -205,13 +208,15 @@ class JobQueue:
         team_id, job_id = job["team_id"], job["id"]
         try:
             messages, max_tokens = self._messages_for(job)
+            grammar = EDIT_GRAMMAR if job["kind"] != "explain" and self.settings.use_grammar else None
             self._event(team_id, job_id, "thinking", worker=worker.name)
             self.broadcast_positions()
 
             reply_parts: list[str] = []
             first_token_at: float | None = None
             n_chunks = 0
-            async for chunk in worker.client.stream_chat(messages, max_tokens, self.settings.temperature):
+            async for chunk in worker.client.stream_chat(messages, max_tokens, self.settings.temperature,
+                                                         grammar=grammar):
                 if self._cancelled(job_id):
                     return
                 if first_token_at is None:
@@ -259,6 +264,8 @@ class JobQueue:
         code = self.db.value("SELECT code FROM versions WHERE id=?", (job["base_version_id"],)) or ""
         if job["kind"] == "fix":
             return prompts.fix_messages(code, job["request"], job["error_in"]), self.settings.edit_max_tokens
+        if job["kind"] == "retry":
+            return prompts.retry_messages(code, job["request"], job["error_in"]), self.settings.edit_max_tokens
         return prompts.edit_messages(code, job["request"]), self.settings.edit_max_tokens
 
     def _handle_edit_reply(self, job: dict, reply_text: str) -> None:
@@ -274,7 +281,9 @@ class JobQueue:
                 self._finish(job_id, "failed", message=reply.plan)
                 self._event(team_id, job_id, "failed", message="Let's try a different idea!")
                 return
-            self._retry_or_give_up(job, error, retry_from=base["id"])
+            log.info("job %s: AI reply could not be applied (%s). Reply starts: %r",
+                     job_id, error[:120], reply_text[:300])
+            self._retry_or_give_up(job, error, retry_from=base["id"], kind="retry")
             return
 
         version_id = self.db.execute(
@@ -303,16 +312,17 @@ class JobQueue:
 
         self.db.execute("UPDATE versions SET status='broken', error=? WHERE id=?", (error[:1000], version_id))
         if job:
-            self._retry_or_give_up(job, error, retry_from=version_id)
+            self._retry_or_give_up(job, error, retry_from=version_id, kind="fix")
         return {"status": "broken"}
 
-    def _retry_or_give_up(self, job: dict, error: str, retry_from: int) -> None:
+    def _retry_or_give_up(self, job: dict, error: str, retry_from: int, kind: str) -> None:
+        """One more go: 'fix' a crashing version, or 'retry' an answer that couldn't be applied."""
         team_id = job["team_id"]
-        fixes_so_far = job["attempt"] if job["kind"] == "fix" else 0
+        fixes_so_far = job["attempt"] if job["kind"] in ("fix", "retry") else 0
         if fixes_so_far < MAX_FIX_ATTEMPTS and job["status"] != "cancelled":
             self._finish(job["id"], "failed", message=f"Needed fixing: {error[:300]}")
-            self._event(team_id, job["id"], "fixing", message=error[:300])
-            self.submit(team_id=team_id, game_id=job["game_id"], kind="fix", request=job["request"],
+            self._event(team_id, job["id"], "fixing", message=error[:300], retry=kind == "retry")
+            self.submit(team_id=team_id, game_id=job["game_id"], kind=kind, request=job["request"],
                         base_version_id=retry_from, error_in=error[:1000], attempt=fixes_so_far + 1)
         else:
             self._finish(job["id"], "failed", message=error[:300])

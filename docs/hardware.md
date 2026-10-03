@@ -98,6 +98,7 @@ With the internet unplugged:
 |---|---|
 | Red dot on a worker | `sudo systemctl status scout-llm` on that Pi. Check the model exists: `ls -l /opt/scout/models/current.gguf` |
 | Everything is slow | Check temperatures on the dashboard. One Pi down means half speed. Try the 1.5B model. |
+| "The AI got confused" every time | Run `setup/benchmark.py --show` and look at what the AI actually wrote. On the dashboard, click a row in *Recent AI requests* to see the same thing. The AI is forced into the edit format by a grammar; to compare without it, add `"use_grammar": false` to `config.json` or run the benchmark with `--no-grammar`. |
 | A team is stuck "Working…" | Dashboard → Queue → **Stop**. They can ask again. |
 | A team forgot their PIN | Dashboard → Teams shows every PIN. **New PIN** issues a new one. |
 | Laptops can't open scout.local | Use the IP address instead. |

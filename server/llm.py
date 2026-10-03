@@ -25,7 +25,8 @@ class LlamaServer:
         self.timeout = timeout
         self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
-    async def stream_chat(self, messages: list[dict], max_tokens: int, temperature: float) -> AsyncIterator[str]:
+    async def stream_chat(self, messages: list[dict], max_tokens: int, temperature: float,
+                          grammar: str | None = None) -> AsyncIterator[str]:
         body = {
             "messages": messages,
             "max_tokens": max_tokens,
@@ -35,6 +36,8 @@ class LlamaServer:
             # still in a slot) instead of re-reading it on a slow Pi.
             "cache_prompt": True,
         }
+        if grammar:
+            body["grammar"] = grammar
         timeout = httpx.Timeout(self.timeout, connect=5.0)
         try:
             async with httpx.AsyncClient(timeout=timeout, headers=self.headers) as client:
@@ -95,7 +98,8 @@ class MockLLM:
     async def healthy(self) -> bool:
         return True
 
-    async def stream_chat(self, messages: list[dict], max_tokens: int, temperature: float) -> AsyncIterator[str]:
+    async def stream_chat(self, messages: list[dict], max_tokens: int, temperature: float,
+                          grammar: str | None = None) -> AsyncIterator[str]:
         system, user = messages[0]["content"], messages[-1]["content"]
         if "explain code" in system.lower():
             text = self._explain(user)
@@ -114,9 +118,9 @@ class MockLLM:
 
     def _edit(self, user: str) -> str:
         code = user.split("Here is the current game:\n\n", 1)[-1]
-        code = re.split(r"\n\n(?:The Scouts asked|Your last change broke)", code)[0]
+        code = re.split(r"\n\n(?:The Scouts asked|Your last change broke|Your last answer could not be used)", code)[0]
         request = (re.findall(r'(?:asked|had asked): "(.*)"', user) or [""])[0]
-        fixing = "Your last change broke" in user
+        fixing = "Your last change broke" in user or "Your last answer could not be used" in user
 
         if fixing:
             bad = re.search(r"^.*mockExplodes\(\);.*\n", code, re.MULTILINE)

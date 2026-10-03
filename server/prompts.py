@@ -17,6 +17,14 @@ exact lines copied from the current game
 the new lines
 >>>>>>> REPLACE
 
+Example. If they ask "make the player a dinosaur" you reply:
+PLAN: Swap the player emoji for a dinosaur.
+<<<<<<< SEARCH
+  player: "🚀",          // the emoji you fly
+=======
+  player: "🦖",          // the emoji you fly
+>>>>>>> REPLACE
+
 Rules:
 - SEARCH must be copied exactly from the game, a few lines only, enough to be unique.
 - Make the smallest change that does what they asked. Keep the game working.
@@ -42,6 +50,16 @@ Your last change broke the game. The error was:
 The Scouts had asked: "{request}"
 Fix the problem so the game works and still does what they asked. Reply with PLAN: and edit blocks only."""
 
+USER_RETRY_EDIT = """Here is the current game:
+
+{code}
+
+Your last answer could not be used: {error}
+Remember: copy the SEARCH lines exactly, character for character, from the game above.
+
+The Scouts asked: "{request}"
+Reply with PLAN: and edit blocks only."""
+
 SYSTEM_EXPLAIN = """You explain code to Scouts aged 10-14 who have never coded.
 Use simple words, short sentences and a fun comparison when it helps. Maximum 80 words. No code blocks."""
 
@@ -63,6 +81,13 @@ def fix_messages(code: str, request: str, error: str) -> list[dict]:
     return [
         {"role": "system", "content": SYSTEM_EDIT},
         {"role": "user", "content": USER_FIX.format(code=code, request=request, error=error)},
+    ]
+
+
+def retry_messages(code: str, request: str, error: str) -> list[dict]:
+    return [
+        {"role": "system", "content": SYSTEM_EDIT},
+        {"role": "user", "content": USER_RETRY_EDIT.format(code=code, request=request, error=error)},
     ]
 
 

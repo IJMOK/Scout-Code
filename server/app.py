@@ -513,6 +513,7 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
         )
         recent = db.all(
             "SELECT j.id, j.kind, j.status, j.request, j.plan, j.message, j.worker, j.tokens, j.created_at, "
+            "substr(j.reply, 1, 4000) AS reply, j.error_in, "
             "j.started_at, j.finished_at, t.name AS team_name, t.emoji AS team_emoji "
             "FROM jobs j JOIN teams t ON t.id=j.team_id ORDER BY j.id DESC LIMIT 30"
         )

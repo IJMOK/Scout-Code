@@ -9,6 +9,7 @@ class _Settings:
     temperature = 0.2
     edit_max_tokens = 200
     explain_max_tokens = 100
+    use_grammar = True
 
 
 def setup_db(tmp_path, teams=4):

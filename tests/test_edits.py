@@ -87,3 +87,60 @@ def test_deleting_lines_leaves_no_blank_line():
     res = apply_reply(GAME, reply)
     assert res.ok
     assert '  player: "🙂",\n};' in res.code
+
+
+CONFIG_GAME = """<script>
+const CONFIG = {
+  title: "Space Shooter",
+  player: "🚀",          // the emoji you fly
+  enemy: "👾",           // the emoji you shoot
+  playerSpeed: 6,        // how fast you move
+};
+function update() {
+  x += CONFIG.playerSpeed;
+}
+</script>
+"""
+
+
+def test_search_without_comments_still_matches():
+    # Typical 3B slip: it retypes the CONFIG lines but drops the aligned comments.
+    reply = parse_reply(
+        'PLAN: Make the player a dragon.\n<<<<<<< SEARCH\nconst CONFIG = {\n  title: "Space Shooter",\n'
+        '  player: "🚀",\n=======\nconst CONFIG = {\n  title: "Space Shooter",\n  player: "🐉",\n>>>>>>> REPLACE\n'
+    )
+    res = apply_reply(CONFIG_GAME, reply)
+    assert res.ok, res.errors
+    assert 'player: "🐉"' in res.code
+    assert 'enemy: "👾",           // the emoji you shoot' in res.code
+
+
+def test_collapsed_spacing_matches():
+    reply = parse_reply('<<<<<<< SEARCH\n  enemy: "👾", // the emoji you shoot\n=======\n  enemy: "👻", // the emoji you shoot\n>>>>>>> REPLACE')
+    res = apply_reply(CONFIG_GAME, reply)
+    assert res.ok, res.errors
+    assert '"👻"' in res.code
+
+
+def test_short_markers():
+    reply = parse_reply("<<< SEARCH\n  playerSpeed: 6,        // how fast you move\n===\n  playerSpeed: 9,\n>>> REPLACE")
+    res = apply_reply(CONFIG_GAME, reply)
+    assert res.ok and "playerSpeed: 9," in res.code
+
+
+def test_code_block_snippet_fallback():
+    # No markers at all: the model just re-prints the changed CONFIG in a code block.
+    reply = parse_reply(
+        "Sure! Here is the updated settings:\n```javascript\nconst CONFIG = {\n  title: \"Space Shooter\",\n"
+        "  player: \"🦖\",\n  enemy: \"👾\",\n  playerSpeed: 12,\n};\n```\nHave fun!"
+    )
+    assert reply.plan == "Sure! Here is the updated settings:"
+    res = apply_reply(CONFIG_GAME, reply)
+    assert res.ok, res.errors
+    assert 'player: "🦖"' in res.code and "playerSpeed: 12" in res.code
+    assert "function update()" in res.code
+
+
+def test_vague_search_is_not_guessed():
+    reply = parse_reply("<<<<<<< SEARCH\nconst SETTINGS = {\n  speed: 99,\n=======\nx\n>>>>>>> REPLACE")
+    assert not apply_reply(CONFIG_GAME, reply).ok

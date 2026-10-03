@@ -178,7 +178,9 @@ function handleEvent(ev) {
       runTest(ev.version_id);
       break;
     case "fixing":
-      setStep("fix", `Found a bug 🐛 (${ev.message}). The AI is fixing it…`);
+      setStep("fix", ev.retry
+        ? "The AI's first try didn't fit your game, so it's having another go…"
+        : `Found a bug 🐛 (${ev.message}). The AI is fixing it…`);
       break;
     case "done":
       finishJob(ev.version_id, ev.plan);

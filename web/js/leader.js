@@ -60,7 +60,7 @@ function render() {
       <td>${t.successes}/${t.requests}</td>
       <td><button class="btn small" data-reset="${t.id}">New PIN</button></td></tr>`).join("");
 
-  $("#recent").innerHTML = L.recent_jobs.map(j => `<tr>
+  $("#recent").innerHTML = L.recent_jobs.map(j => `<tr data-job="${j.id}" style="cursor:pointer">
       <td>${j.id}</td><td>${esc(j.team_emoji)} ${esc(j.team_name)}</td>
       <td>${j.kind === "explain" ? "<i>explain code</i>" : esc(j.request)}</td>
       <td>${esc(j.plan || j.message).slice(0, 160)}</td>
@@ -79,6 +79,7 @@ function render() {
       <td><button class="btn small" data-hide="${g.id}" data-hidden="${g.hidden ? 0 : 1}">${g.hidden ? "Show" : "Hide"}</button></td></tr>`;
   }).join("");
 
+  $all("[data-job]").forEach(row => row.onclick = () => showReply(Number(row.dataset.job)));
   $all("[data-cancel]").forEach(b => b.onclick = () => post(`/api/leader/jobs/${b.dataset.cancel}/cancel`));
   $all("[data-hide]").forEach(b => b.onclick = () => post(`/api/leader/games/${b.dataset.hide}/hide`, { hidden: b.dataset.hidden === "1" }));
   $all("[data-reset]").forEach(b => b.onclick = async () => {
@@ -87,6 +88,18 @@ function render() {
     if (res) toast(`New PIN: ${res.pin}`);
   });
 }
+
+function showReply(id) {
+  const j = L.recent_jobs.find(x => x.id === id);
+  if (!j) return;
+  $("#reply-title").textContent = `Job #${j.id}: ${j.kind} (${j.status}) by ${j.team_emoji} ${j.team_name}`;
+  $("#reply-request").textContent = j.kind === "explain" ? "Explain some code" : `Asked: “${j.request}”`;
+  $("#reply-error").textContent = [j.error_in && `Told the AI: ${j.error_in}`, j.message && `Result: ${j.message}`]
+    .filter(Boolean).join("  ·  ");
+  $("#reply-text").textContent = j.reply || "(no reply yet)";
+  $("#reply-modal").classList.remove("hidden");
+}
+$("#reply-close").onclick = () => $("#reply-modal").classList.add("hidden");
 
 async function post(path, body = {}) {
   try {

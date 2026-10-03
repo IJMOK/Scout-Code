@@ -115,7 +115,7 @@ def test_agent_gives_up_after_one_fix(client, app):
     g = wait_for(lambda: (lambda g: g if g["active_job"] is None else None)(c.get(f"/api/games/{gid}").json()))
     assert g["current"]["id"] == first  # game is safe
     jobs = app.state.db.all("SELECT kind, status FROM jobs ORDER BY id")
-    assert [j["kind"] for j in jobs] == ["edit", "fix"]
+    assert [j["kind"] for j in jobs] == ["edit", "retry"]
     assert all(j["status"] == "failed" for j in jobs)
 
 
@@ -239,3 +239,20 @@ def test_restore_only_ok_versions(client, app):
     c.post(f"/api/versions/{vid}/test", json={"ok": True})
     assert c.post(f"/api/games/{gid}/restore", json={"version_id": first}).status_code == 200
     assert c.get(f"/api/games/{gid}").json()["current"]["id"] == first
+
+
+def test_unusable_answer_gets_a_retry_prompt_on_the_original(client, app):
+    """An edit that can't be applied is retried with "could not be used", not "broke the game"."""
+    from server import prompts
+
+    c, _ = make_team(app, "Retry")
+    gid = new_game(c, "snake")
+    first = c.get(f"/api/games/{gid}").json()["current"]["id"]
+    c.post(f"/api/games/{gid}/ask", json={"request": "NOMATCH please"})
+    wait_for(lambda: c.get(f"/api/games/{gid}").json()["pending_test_version_id"])
+    retry = app.state.db.one("SELECT * FROM jobs WHERE kind='retry'")
+    assert retry["base_version_id"] == first
+    assert "could not find" in retry["error_in"]
+    msgs, _ = app.state.jobs._messages_for(retry)
+    assert "Your last answer could not be used" in msgs[-1]["content"]
+    assert "broke the game" not in msgs[-1]["content"]

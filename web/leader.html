@@ -69,7 +69,7 @@
 
     <section class="card wide">
       <h2>Recent AI requests</h2>
-      <p class="muted" style="font-size:14px">Keep an eye on what scouts are asking for. Great for spotting teams who are stuck.</p>
+      <p class="muted" style="font-size:14px">Keep an eye on what scouts are asking for. Great for spotting teams who are stuck. Click a row to see exactly what the AI wrote.</p>
       <div class="scroll"><table><thead><tr><th>#</th><th>Team</th><th>Asked</th><th>AI's plan / result</th><th>Status</th><th>Worker</th><th>Time</th></tr></thead><tbody id="recent"></tbody></table></div>
     </section>
 
@@ -79,6 +79,16 @@
     </section>
   </div>
 </main>
+
+<div class="modal-back hidden" id="reply-modal">
+  <div class="modal wide">
+    <h2 id="reply-title">AI reply</h2>
+    <p id="reply-request"></p>
+    <p class="muted" id="reply-error"></p>
+    <div class="notebook" id="reply-text" style="max-height:60vh"></div>
+    <p><button class="btn" id="reply-close">Close</button></p>
+  </div>
+</div>
 
 <script src="/static/js/common.js"></script>
 <script src="/static/js/leader.js"></script>

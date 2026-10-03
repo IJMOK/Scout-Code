@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 
 from server import prompts  # noqa: E402
 from server.edits import apply_reply, parse_reply  # noqa: E402
+from server.grammar import EDIT_GRAMMAR  # noqa: E402
 
 CASES = [
     ("space-shooter", "make the player a dragon 🐉 and the enemies ghosts 👻"),
@@ -47,6 +48,9 @@ def main() -> None:
     ap.add_argument("--key-file", default="/opt/scout/llm-key")
     ap.add_argument("--cases", type=int, default=len(CASES), help="how many requests to try (max 10)")
     ap.add_argument("--max-tokens", type=int, default=900)
+    ap.add_argument("--show", action="store_true", help="print the AI's raw reply for requests that failed")
+    ap.add_argument("--show-all", action="store_true", help="print every raw reply")
+    ap.add_argument("--no-grammar", action="store_true", help="don't force the edit format (to compare)")
     args = ap.parse_args()
 
     headers = {}
@@ -60,7 +64,7 @@ def main() -> None:
         model = Path(props.get("model_path", "?")).name
     except Exception:
         model = "?"
-    print(f"Model: {model}   Server: {args.url}\n")
+    print(f"Model: {model}   Server: {args.url}   Grammar: {'off' if args.no_grammar else 'on'}\n")
     print(f"{'#':>2}  {'game':<14} {'prompt':>7} {'read s':>7} {'gen tok':>7} {'tok/s':>6} {'total s':>8}  result")
 
     ok = 0
@@ -68,12 +72,15 @@ def main() -> None:
     for i, (starter, request) in enumerate(CASES[: args.cases], 1):
         code = (ROOT / "server" / "starters" / f"{starter}.html").read_text(encoding="utf-8")
         start = time.monotonic()
-        r = client.post("/v1/chat/completions", json={
+        body = {
             "messages": prompts.edit_messages(code, request),
             "max_tokens": args.max_tokens,
             "temperature": 0.2,
             "cache_prompt": True,
-        })
+        }
+        if not args.no_grammar:
+            body["grammar"] = EDIT_GRAMMAR
+        r = client.post("/v1/chat/completions", json=body)
         r.raise_for_status()
         total = time.monotonic() - start
         data = r.json()
@@ -85,6 +92,11 @@ def main() -> None:
         totals.append(total)
         print(f"{i:>2}  {starter:<14} {t.get('prompt_n', 0):>7} {t.get('prompt_ms', 0) / 1000:>7.1f} "
               f"{t.get('predicted_n', 0):>7} {t.get('predicted_per_second', 0):>6.1f} {total:>8.1f}  {verdict}")
+        if args.show_all or (args.show and not result.ok):
+            print("    ┌─ AI reply " + "─" * 50)
+            for line in reply.splitlines():
+                print("    │ " + line)
+            print("    └" + "─" * 61)
 
     n = len(totals)
     print(f"\nEdits that applied: {ok}/{n}    Average time per request: {sum(totals) / n:.0f}s")
