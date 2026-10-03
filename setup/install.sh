@@ -80,6 +80,7 @@ chown "$RUN_USER":"$RUN_USER" "$SCOUT_DIR/llm-key"
 step "Installing services"
 # shellcheck source=setup/lib.sh
 source "$APP_DIR/setup/lib.sh"
+install_shutdown_permission
 render_unit "$APP_DIR/setup/systemd/scout-llm.service"
 render_unit "$APP_DIR/setup/systemd/scout-stats.service"
 SERVICES=(scout-llm scout-stats)

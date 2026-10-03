@@ -72,4 +72,5 @@ This session covers making a digital project, testing it, and sharing it with ot
 ## Afterwards
 
 - Dashboard → **💾 Download all games**. Each game is a single HTML file that works on any computer, even offline. Share the zip, or copy it onto USB sticks.
+- Switching off: dashboard → **⏻ Shut down both Pis**. Wait for the red lights, then unplug.
 - For the next group, use **🔄 Start a new event** on the dashboard. It saves this event (games zip + full backup) to *Past events*, then clears everything and makes a new join code.

@@ -45,6 +45,10 @@ sudo systemctl restart scout-llm
 4. Temperatures stay under ~80 °C with no ⚠️ throttled.
 5. Reset: leader dashboard → **🔄 Start a new event** (archives to `/opt/scout/data/archive/`, see `server/archive.py`).
 
+## Shutdown button
+
+Leader dashboard → **⏻ Shut down both Pis** calls `POST /shutdown` on each Pi's `scout-stats` agent (port 8099, `server/stats_agent.py`). The agent checks the llm key and runs `sudo -n /usr/bin/systemctl poweroff`, allowed by `/etc/sudoers.d/scout-shutdown` (installed by `install_shutdown_permission` in `setup/lib.sh`). Other Pis are shut down first and basecamp last. `/stats` reports `can_shutdown`.
+
 ## Debugging
 
 - `journalctl -u scout-llm -f` / `journalctl -u scout-portal -f`

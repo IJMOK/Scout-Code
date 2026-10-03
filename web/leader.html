@@ -49,6 +49,7 @@
       </div>
       <p class="muted" style="font-size:14px">Pause the AI while you talk to everyone. Close voting, then reveal the awards on the projector.</p>
       <p><a class="btn primary" href="/api/leader/export.zip">💾 Download all games (zip for USB sticks)</a></p>
+      <p><button class="btn danger" id="btn-shutdown">⏻ Shut down both Pis</button></p>
       <p class="muted" id="avg"></p>
     </section>
 
@@ -95,6 +96,16 @@
     </section>
   </div>
 </main>
+
+<div class="modal-back hidden" id="shutdown-screen">
+  <div class="modal" style="text-align:center">
+    <div style="font-size:64px">😴</div>
+    <h2>Shutting down…</h2>
+    <ul id="shutdown-results" style="text-align:left;line-height:1.8"></ul>
+    <p>Wait until each Pi's <b>green light stops flashing</b> and only the <b style="color:var(--bad)">red light</b> is on (about 20 seconds), then unplug them, then the router.</p>
+    <p class="muted" style="font-size:14px">If a Pi didn't get the message, press the small button on its edge once instead.</p>
+  </div>
+</div>
 
 <div class="modal-back hidden" id="reply-modal">
   <div class="modal wide">

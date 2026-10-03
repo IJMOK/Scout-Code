@@ -11,6 +11,8 @@ RUN_USER="${SUDO_USER:-pi}"
 # shellcheck source=setup/lib.sh
 source "$APP_DIR/setup/lib.sh"
 
+install_shutdown_permission
+
 SERVICES=()
 for unit in scout-llm scout-stats scout-portal; do
   # Only update services this Pi already has (the worker has no portal).

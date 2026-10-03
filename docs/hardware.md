@@ -95,6 +95,16 @@ With the internet unplugged:
 4. Optionally load-test from a laptop: `python setup/load_test.py --url http://scout.local --leader-pin <PIN> --teams 6`
 5. Reset for the real event: on the dashboard, use **🔄 Start a new event** (see below).
 
+## Switching off at the end
+
+On the leader dashboard, press **⏻ Shut down both Pis** and confirm. The worker Pi shuts down first, then basecamp (which runs the website). Wait until each Pi's green light stops flashing and only the red light is on (about 20 seconds), then unplug them, then the router.
+
+Nothing is lost: when you switch on again (router first, then the Pis), the event carries on where it left off and the AI warms up by itself.
+
+If the dashboard can't reach a Pi, press the small **power button on the edge of the Pi once** (don't hold it). That also shuts it down cleanly. Never just pull the plug while a Pi is running: it can damage the saved games.
+
+> The button needs a one-time permission on each Pi. `install.sh` and `update-services.sh` set it up. If a worker card on the dashboard says *"can't shut down from here yet"*, run `sudo ./setup/update-services.sh` on that Pi.
+
 ## Running another group
 
 On the leader dashboard, type the new group's event name under **🔄 Start a new event** and press **Save this event and start a new one**. It:

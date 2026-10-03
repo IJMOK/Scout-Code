@@ -11,8 +11,10 @@ import json
 import logging
 import re
 import secrets
+from urllib.parse import urlparse
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -59,7 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         workers = [Worker(name="mock-1", client=MockLLM(settings.mock_delay)),
                    Worker(name="mock-2", client=MockLLM(settings.mock_delay))]
     else:
-        workers = [Worker(name=w.name, client=LlamaServer(w.llm, settings.request_timeout, w.key()), stats_url=w.stats)
+        workers = [Worker(name=w.name, client=LlamaServer(w.llm, settings.request_timeout, w.key()),
+                          stats_url=w.stats, api_key=w.key())
                    for w in settings.workers]
     warm_sources = {s["id"]: (STARTERS_DIR / f"{s['id']}.html").read_text(encoding="utf-8") for s in STARTERS}
     jobs = JobQueue(db, workers, hub, settings, warm_sources)
@@ -579,6 +582,33 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
         if not path:
             raise HTTPException(404, "Not found")
         return FileResponse(path, filename=f"{name}-{filename}")
+
+    @app.post("/api/leader/shutdown")
+    async def shutdown_pis(_: bool = Depends(leader)):
+        """Power off every Pi cleanly: the other Pis first, then this one (which runs this website)."""
+        targets = [w for w in jobs.workers if w.stats_url]
+        if not targets:
+            raise HTTPException(409, "There are no Pis to shut down (this is the development mode).")
+
+        def is_this_pi(w: Worker) -> bool:
+            return urlparse(w.stats_url).hostname in ("127.0.0.1", "localhost", "::1")
+
+        db.set_setting("ai_paused", "1")  # don't start anything new on the way down
+        results = []
+        async with httpx.AsyncClient(timeout=5) as client:
+            for w in sorted(targets, key=is_this_pi):
+                # This Pi waits a little longer, so this page gets its answer first.
+                delay = 5 if is_this_pi(w) else 1
+                try:
+                    r = await client.post(w.stats_url.rstrip("/") + "/shutdown", json={"delay": delay},
+                                          headers={"Authorization": f"Bearer {w.api_key or ''}"})
+                    ok = r.status_code == 202
+                    error = "" if ok else r.json().get("error", f"error {r.status_code}")
+                except (httpx.HTTPError, ValueError) as e:
+                    ok, error = False, f"couldn't reach it ({e.__class__.__name__})"
+                results.append({"name": w.name, "ok": ok, "error": error})
+        log.info("Shutdown requested: %s", results)
+        return {"results": results}
 
     @app.post("/api/leader/warmup")
     def warmup(_: bool = Depends(leader)):

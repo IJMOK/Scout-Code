@@ -1,11 +1,11 @@
 [Unit]
-Description=Scout Code Pi health reporter
+Description=Scout Code Pi health reporter (and shutdown button)
 After=network-online.target
 
 [Service]
 User=@USER@
 WorkingDirectory=@APP_DIR@
-ExecStart=/usr/bin/python3 -m server.stats_agent --port 8099
+ExecStart=/usr/bin/python3 -m server.stats_agent --port 8099 --key-file @SCOUT_DIR@/llm-key
 Restart=always
 RestartSec=3
 

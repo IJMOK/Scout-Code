@@ -41,12 +41,14 @@ function render() {
     const temp = st.temp_c != null ? `${st.temp_c}°C` : "?";
     const hot = st.temp_c >= 80 ? " ⚠️ hot!" : "";
     const throttled = st.throttled ? " ⚠️ throttled" : "";
+    const noOff = st.can_shutdown === false ? `<div class="muted" style="font-size:13px">⏻ can't shut down from here yet: run <code>sudo ./setup/update-services.sh</code> on this Pi</div>` : "";
     return `<div class="worker">
       <b><span class="dot ${w.healthy ? "ok" : ""}"></span> ${esc(w.name)}</b>
       <div>${w.busy_job === -1 ? "Warming up…" : w.busy_job ? `Working on job #${w.busy_job}` : (w.healthy ? "Ready" : "Not responding")}
         · ${w.warm_total ? (w.warm_left ? `🔥 warm ${w.warm_done}/${w.warm_total}` : "🔥 Warm ✓") : "not warmed"}</div>
       <div class="muted" style="font-size:14px">🌡️ ${temp}${hot}${throttled} · ⚡ ${w.tokens_per_sec || "-"} tok/s · ${w.jobs_done} jobs
       ${st.load != null ? `· load ${st.load}` : ""} ${st.mem_used_pct != null ? `· mem ${st.mem_used_pct}%` : ""}</div>
+      ${noOff}
     </div>`;
   }).join("");
 
@@ -157,9 +159,22 @@ $("#btn-new-event").onclick = async () => {
   btn.disabled = false;
 };
 
+let shuttingDown = false;
+$("#btn-shutdown").onclick = async () => {
+  const busy = L.queue.length ? `\n\n⚠️ ${L.queue.length} AI request(s) are still waiting or running and will be stopped.` : "";
+  if (!confirm(`Shut down both Raspberry Pis now?${busy}\n\nEverything is saved: the event carries on where it left off when you switch them back on.`)) return;
+  try {
+    const res = await api("/api/leader/shutdown", { method: "POST" });
+    shuttingDown = true;
+    $("#shutdown-results").innerHTML = res.results.map(r =>
+      `<li>${r.ok ? "✅" : "⚠️"} <b>${esc(r.name)}</b>: ${r.ok ? "shutting down" : `didn't shut down (${esc(r.error)}). Use its power button.`}</li>`).join("");
+    $("#shutdown-screen").classList.remove("hidden");
+  } catch (err) { toast(err.message, true); }
+};
+
 $("#btn-warm").onclick = () => post("/api/leader/warmup");
 $("#btn-newcode").onclick = () => post("/api/leader/join-code");
 $("#btn-name").onclick = () => post("/api/leader/settings", { event_name: $("#event-name").value });
 
 refresh().then(loadArchives).catch(err => toast(err.message, true));
-setInterval(() => { if (!$("#dash").classList.contains("hidden")) refresh().catch(() => {}); }, 3000);
+setInterval(() => { if (!shuttingDown && !$("#dash").classList.contains("hidden")) refresh().catch(() => {}); }, 3000);

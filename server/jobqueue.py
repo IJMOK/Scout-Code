@@ -40,6 +40,7 @@ class Worker:
     name: str
     client: Any
     stats_url: str | None = None
+    api_key: str | None = None  # also unlocks the Pi's /shutdown
     busy_job: int | None = None
     healthy: bool = True
     tokens_per_sec: float = 0.0
