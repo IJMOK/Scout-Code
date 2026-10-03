@@ -72,4 +72,4 @@ This session covers making a digital project, testing it, and sharing it with ot
 ## Afterwards
 
 - Dashboard → **💾 Download all games**. Each game is a single HTML file that works on any computer, even offline. Share the zip, or copy it onto USB sticks.
-- Keep `/opt/scout/data/scout.db` if you want the history. Move it aside to start fresh for the next event.
+- For the next group, use **🔄 Start a new event** on the dashboard. It saves this event (games zip + full backup) to *Past events*, then clears everything and makes a new join code.

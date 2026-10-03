@@ -43,7 +43,7 @@ sudo systemctl restart scout-llm
 2. `python setup/load_test.py --url http://scout.local --leader-pin <PIN> --teams 6`: the longest wait should be acceptable (a few minutes at most).
 3. Do a real run with laptops: join, 3 edits, publish, rate, close voting, reveal awards, download the zip.
 4. Temperatures stay under ~80 °C with no ⚠️ throttled.
-5. Reset: stop `scout-portal`, move `/opt/scout/data/scout.db` aside, then start it again.
+5. Reset: leader dashboard → **🔄 Start a new event** (archives to `/opt/scout/data/archive/`, see `server/archive.py`).
 
 ## Debugging
 

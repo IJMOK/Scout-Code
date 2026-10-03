@@ -77,6 +77,18 @@
       <div class="scroll"><table><thead><tr><th>#</th><th>Team</th><th>Asked</th><th>AI's plan / result</th><th>Status</th><th>Worker</th><th>Time</th></tr></thead><tbody id="recent"></tbody></table></div>
     </section>
 
+    <section class="card wide" id="new-event-card">
+      <h2>🔄 Start a new event</h2>
+      <p class="muted" style="font-size:14px">For the next group. This <b>saves everything</b> from the current event (all games, versions and ratings, plus a zip of the games), then clears all teams, games, ratings and votes, and makes a new join code. Laptops still logged in go back to the join page. The AI, the warm-up and your leader PIN are not affected.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="next-event-name" placeholder="Name for the new event, e.g. 2nd Anytown Cubs Game Jam" style="flex:1;min-width:260px">
+        <button class="btn danger" id="btn-new-event">Save this event and start a new one</button>
+      </div>
+      <div id="new-event-done" class="hidden" style="margin-top:12px"></div>
+      <h3 style="margin-top:20px">Past events</h3>
+      <div class="scroll"><table><thead><tr><th>Event</th><th>Saved</th><th>Teams</th><th>Games</th><th>Download</th></tr></thead><tbody id="archives"></tbody></table></div>
+    </section>
+
     <section class="card wide">
       <h2>Games</h2>
       <div class="scroll"><table><thead><tr><th>Game</th><th>Team</th><th>Arcade</th><th>Rating</th><th></th></tr></thead><tbody id="games"></tbody></table></div>

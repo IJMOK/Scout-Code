@@ -7,12 +7,10 @@ Run (on the Pi):              see setup/systemd/scout-portal.service
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
 import re
 import secrets
-import zipfile
 from contextlib import asynccontextmanager
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response
@@ -22,6 +20,7 @@ from pydantic import BaseModel, Field
 
 from . import safety
 from .config import ROOT, Settings, load_settings
+from .archive import archive_event, archive_file, build_export, list_archives, reset_event
 from .db import DB, now
 from .jobqueue import Hub, JobQueue, Worker
 from .llm import LlamaServer, MockLLM
@@ -148,6 +147,10 @@ class LeaderSettings(BaseModel):
     voting_frozen: bool | None = None
     awards_revealed: bool | None = None
     event_name: str | None = None
+
+
+class NewEvent(BaseModel):
+    event_name: str = Field(min_length=2, max_length=80)
 
 
 class Hide(BaseModel):
@@ -380,6 +383,8 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
                         break
                     try:
                         ev = await asyncio.wait_for(q.get(), timeout=15)
+                        if ev is None:  # the hub hung up (new event)
+                            break
                         yield f"data: {json.dumps(ev)}\n\n"
                     except asyncio.TimeoutError:
                         yield ": keep-alive\n\n"
@@ -553,6 +558,28 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
             jobs.notify()
         return {"ok": True}
 
+    @app.post("/api/leader/new-event")
+    def new_event(body: NewEvent, _: bool = Depends(leader)):
+        """Archive this group's event, then wipe teams, games and votes for the next group."""
+        stopped = jobs.cancel_all()
+        summary = archive_event(db, settings.data_dir, event_name())
+        reset_event(db, body.event_name.strip(), _new_join_code())
+        hub.disconnect_all()
+        log.info("New event %r started; previous event archived as %s (%d jobs stopped)",
+                 body.event_name, summary["name"], stopped)
+        return {"archive": summary, "join_code": db.get_setting("join_code")}
+
+    @app.get("/api/leader/archives")
+    def archives(_: bool = Depends(leader)):
+        return list_archives(settings.data_dir)
+
+    @app.get("/api/leader/archives/{name}/{filename}")
+    def archive_download(name: str, filename: str, _: bool = Depends(leader)):
+        path = archive_file(settings.data_dir, name, filename)
+        if not path:
+            raise HTTPException(404, "Not found")
+        return FileResponse(path, filename=f"{name}-{filename}")
+
     @app.post("/api/leader/warmup")
     def warmup(_: bool = Depends(leader)):
         jobs.start_warmup()
@@ -583,39 +610,3 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
     def export(_: bool = Depends(leader)):
         return Response(build_export(db, event_name()), media_type="application/zip",
                         headers={"Content-Disposition": 'attachment; filename="scout-code-games.zip"'})
-
-
-# --------------------------------------------------------------------------- export
-
-def _slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "game"
-
-
-def build_export(db: DB, event_name: str) -> bytes:
-    """Every team's latest working game as stand-alone HTML files, plus an index page."""
-    games = db.all(
-        "SELECT g.id, g.title, g.description, g.published_version_id, t.name AS team_name, t.emoji AS team_emoji, "
-        "v.code FROM games g JOIN teams t ON t.id=g.team_id JOIN versions v ON v.id=g.current_version_id "
-        "WHERE g.hidden=0 ORDER BY t.name, g.id"
-    )
-    buf = io.BytesIO()
-    links = []
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        for g in games:
-            path = f"{_slug(g['team_name'])}/{g['id']}-{_slug(g['title'])}.html"
-            z.writestr(path, g["code"])
-            star = " ⭐ published" if g["published_version_id"] else ""
-            links.append(f'<li>{_esc(g["team_emoji"])} <b>{_esc(g["team_name"])}</b>: '
-                         f'<a href="{path}">{_esc(g["title"])}</a>{star}</li>')
-        z.writestr("index.html", f"""<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>{_esc(event_name)}</title>
-<style>body{{font-family:sans-serif;max-width:700px;margin:2em auto;padding:0 1em;line-height:1.6}}</style>
-</head><body><h1>🎮 {_esc(event_name)}</h1>
-<p>Every game made at the event. They work offline: just open one in a web browser.</p>
-<ul>{''.join(links)}</ul></body></html>""")
-    return buf.getvalue()
-
-
-def _esc(s: str) -> str:
-    return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
-

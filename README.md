@@ -56,6 +56,7 @@ On the day:
 - Leaders open **http://scout.local/leader**. The PIN is printed at the end of the install and stored in `/opt/scout/data/leader-pin.txt`.
 - Put **/leader** on the projector for the join code, then **/awards** at the end.
 - **💾 Download all games** on the dashboard gives a zip of every game as a stand-alone HTML file, ready for USB sticks.
+- **🔄 Start a new event** saves everything to *Past events*, then clears teams, games and votes for the next group. The Pis don't need restarting.
 
 ## Developing on a normal computer
 

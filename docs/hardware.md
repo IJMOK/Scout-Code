@@ -93,13 +93,27 @@ With the internet unplugged:
 2. With 3 laptops, create teams, make 3 changes each, publish, then rate each other's games.
 3. Watch the dashboard. Temperatures should stay below about 80 °C. If one shows ⚠️ *throttled*, improve the cooling or the power supply.
 4. Optionally load-test from a laptop: `python setup/load_test.py --url http://scout.local --leader-pin <PIN> --teams 6`
-5. Reset for the real event. On basecamp:
+5. Reset for the real event: on the dashboard, use **🔄 Start a new event** (see below).
 
-   ```bash
-   sudo systemctl stop scout-portal
-   mv /opt/scout/data/scout.db /opt/scout/data/rehearsal.db
-   sudo systemctl start scout-portal
-   ```
+## Running another group
+
+On the leader dashboard, type the new group's event name under **🔄 Start a new event** and press **Save this event and start a new one**. It:
+
+- saves the current event to **Past events**: a full backup of every game, version, rating and vote, plus a zip of the games for USB sticks (both downloadable from the dashboard);
+- stops any AI requests still running;
+- clears all teams, games, ratings and votes, re-opens voting, hides the awards, unpauses the AI, and makes a new join code;
+- sends any laptop still logged in back to the join page.
+
+Your leader PIN, the AI, the model and the warm-up are untouched, so the Pis don't need restarting. Archives are kept in `/opt/scout/data/archive/` on basecamp.
+
+**Bringing an old event back** (rarely needed): download its *backup*, or find it in the archive folder, then:
+
+```bash
+sudo systemctl stop scout-portal
+cd /opt/scout/data && rm -f scout.db-wal scout.db-shm
+cp archive/<event folder>/scout.db scout.db
+sudo systemctl start scout-portal
+```
 
 ## Troubleshooting
 

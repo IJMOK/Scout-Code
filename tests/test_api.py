@@ -243,7 +243,6 @@ def test_restore_only_ok_versions(client, app):
 
 def test_unusable_answer_gets_a_retry_prompt_on_the_original(client, app):
     """An edit that can't be applied is retried with "could not be used", not "broke the game"."""
-    from server import prompts
 
     c, _ = make_team(app, "Retry")
     gid = new_game(c, "snake")
@@ -268,3 +267,80 @@ def test_partial_edit_accepted_on_the_retry(client, app):
     assert "didn't fit" in v["plan"]
     kinds = [j["kind"] for j in app.state.db.all("SELECT kind FROM jobs ORDER BY id")]
     assert kinds == ["edit", "retry"]
+
+
+def leader_client(app):
+    leader = TestClient(app)
+    assert leader.post("/api/leader/login", json={"pin": "123456"}).status_code == 200
+    return leader
+
+
+def test_new_event_archives_then_resets(client, app, tmp_path):
+    import io
+    import sqlite3
+    import zipfile
+
+    a, _ = make_team(app, "Alpha")
+    b, _ = make_team(app, "Bravo")
+    ga = new_game(a, "flappy")
+    a.post(f"/api/games/{ga}/publish", json={"title": "Chick Rush"})
+    b.post(f"/api/arcade/{ga}/rate", json={"stars": 5})
+    leader = leader_client(app)
+    leader.post("/api/leader/settings", json={"event_name": "Wolves Night", "voting_frozen": True})
+    old_code = app.state.db.get_setting("join_code")
+
+    r = leader.post("/api/leader/new-event", json={"event_name": "Owls Night"})
+    assert r.status_code == 200, r.text
+    archive = r.json()["archive"]
+    assert archive["event_name"] == "Wolves Night" and archive["teams"] == 2 and archive["games"] == 1
+
+    # Everything was saved...
+    folder = tmp_path / "archive" / archive["name"]
+    saved = sqlite3.connect(folder / "scout.db")
+    assert saved.execute("SELECT COUNT(*) FROM teams").fetchone()[0] == 2
+    assert saved.execute("SELECT stars FROM ratings").fetchone()[0] == 5
+    z = zipfile.ZipFile(io.BytesIO(leader.get(f"/api/leader/archives/{archive['name']}/games.zip").content))
+    assert any(n.endswith("chick-rush.html") for n in z.namelist())
+    assert [x["event_name"] for x in leader.get("/api/leader/archives").json()] == ["Wolves Night"]
+
+    # ...and then cleared for the next group.
+    db = app.state.db
+    assert all(db.value(f"SELECT COUNT(*) FROM {t}") == 0 for t in ("teams", "games", "versions", "ratings", "votes", "jobs"))
+    status = leader.get("/api/leader/status").json()  # leader is still logged in
+    assert status["event_name"] == "Owls Night"
+    assert status["join_code"] != old_code and status["join_code"] == r.json()["join_code"]
+    assert status["voting_frozen"] is False
+    assert a.get("/api/me").status_code == 401  # old teams are logged out
+    assert client.get("/api/arcade").json()["games"] == []
+
+    # The new group can join with the new code
+    new = TestClient(app)
+    assert new.post("/api/teams", json={"name": "Alpha", "emoji": "🦊",
+                                        "join_code": status["join_code"]}).status_code == 200
+
+
+def test_new_event_stops_ai_jobs_cleanly(client, app):
+    c, _ = make_team(app, "Busy")
+    gid = new_game(c)
+    leader = leader_client(app)
+    leader.post("/api/leader/settings", json={"ai_paused": True})
+    c.post(f"/api/games/{gid}/ask", json={"request": "make it red"})
+    assert leader.post("/api/leader/new-event", json={"event_name": "Next"}).status_code == 200
+    leader.post("/api/leader/settings", json={"ai_paused": False})
+    # The AI is still fine for the new group.
+    n, _ = make_team(app, "Fresh")
+    gid2 = new_game(n)
+    n.post(f"/api/games/{gid2}/ask", json={"request": "make it blue"})
+    assert wait_for(lambda: n.get(f"/api/games/{gid2}").json()["pending_test_version_id"])
+    assert all(w.healthy for w in app.state.jobs.workers)
+
+
+def test_archive_downloads_are_guarded(client, app):
+    leader = leader_client(app)
+    for bad in ["../scout.db", "..%2Fscout.db", "2026-01-01-1200/../../leader-pin.txt"]:
+        assert leader.get(f"/api/leader/archives/{bad}/games.zip").status_code == 404
+    leader.post("/api/leader/new-event", json={"event_name": "Next"})
+    name = leader.get("/api/leader/archives").json()[0]["name"]
+    assert leader.get(f"/api/leader/archives/{name}/leader-pin.txt").status_code == 404
+    assert client.get(f"/api/leader/archives/{name}/games.zip").status_code == 401
+    assert client.post("/api/leader/new-event", json={"event_name": "Hack"}).status_code == 401

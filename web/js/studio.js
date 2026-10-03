@@ -134,6 +134,12 @@ function connectEvents() {
 }
 
 function handleEvent(ev) {
+  if (ev.type === "reset") {
+    // A leader started a new event: this team no longer exists.
+    S.events.close();
+    location.href = "/login";
+    return;
+  }
   // Explain jobs stream into the speech bubble; everything else is the agent panel.
   const isExplain = ev.kind === "explain";
 

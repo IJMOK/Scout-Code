@@ -72,6 +72,20 @@ class Hub:
     def publish(self, team_id: int, event: dict) -> None:
         _in_loop(self.loop, self._publish, team_id, event)
 
+    def disconnect_all(self) -> None:
+        """New event: tell every open studio tab to go back to the join page, then hang up."""
+        _in_loop(self.loop, self._disconnect_all)
+
+    def _disconnect_all(self) -> None:
+        for subs in self.subs.values():
+            for q in list(subs):
+                for item in ({"type": "reset"}, None):  # None ends the stream
+                    try:
+                        q.put_nowait(item)
+                    except asyncio.QueueFull:
+                        pass
+        self.subs.clear()
+
     def _publish(self, team_id: int, event: dict) -> None:
         for q in list(self.subs.get(team_id, ())):
             try:
@@ -376,7 +390,16 @@ class JobQueue:
 
     # ----------------------------------------------------------------- helpers
     def _cancelled(self, job_id: int) -> bool:
-        return self.db.value("SELECT status FROM jobs WHERE id=?", (job_id,)) == "cancelled"
+        # A job that has vanished was wiped by "Start a new event": treat it as cancelled.
+        return self.db.value("SELECT status FROM jobs WHERE id=?", (job_id,)) in ("cancelled", None)
+
+    def cancel_all(self) -> int:
+        """Stop every waiting or running job (used when starting a new event)."""
+        ids = [r["id"] for r in self.db.all("SELECT id FROM jobs WHERE status IN ('queued','running','testing')")]
+        for job_id in ids:
+            self.cancel(job_id)
+        self.infra_retries.clear()
+        return len(ids)
 
     def _finish(self, job_id: int, status: str, message: str = "") -> None:
         self.db.execute("UPDATE jobs SET status=?, message=?, finished_at=? WHERE id=?",

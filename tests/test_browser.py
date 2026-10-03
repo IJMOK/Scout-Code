@@ -202,3 +202,15 @@ def test_full_event_flow(browser, server, tmp_path):
     # Export zip
     resp = leader.request.get(server + "/api/leader/export.zip")
     assert resp.status == 200 and resp.body()[:2] == b"PK"
+
+    # --- Next group: leader starts a new event; the old team's studio is sent back to the join page ---
+    leader.reload()
+    leader.wait_for_selector("#dash:not(.hidden)")
+    leader.fill("#next-event-name", "Cubs Game Jam")
+    leader.once("dialog", lambda d: d.accept())
+    leader.click("#btn-new-event")
+    leader.wait_for_selector("#new-event-done:not(.hidden)")
+    assert "Scout Code Game Jam" in leader.inner_text("#archives")
+    leader.screenshot(path=str(shots / "9-new-event.png"), full_page=True)
+    p1.wait_for_url("**/login", timeout=10000)
+    assert leader.inner_text("#join-code").strip() != join
