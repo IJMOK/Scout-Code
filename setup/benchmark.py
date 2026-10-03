@@ -66,6 +66,8 @@ def main() -> None:
         headers["Authorization"] = f"Bearer {key_path.read_text().strip()}"
 
     client = httpx.Client(base_url=args.url, headers=headers, timeout=900)
+    if not wait_until_ready(client):
+        sys.exit("The AI server isn't ready. Check it with: sudo journalctl -u scout-llm -n 30 --no-pager")
     try:
         props = client.get("/props").json()
         model = Path(props.get("model_path", "?")).name
@@ -76,6 +78,27 @@ def main() -> None:
         if args.repeat:
             print(f"--- Pass {pass_no} {'(games now cached: this is what scouts feel)' if pass_no == 2 else ''}")
         run_cases(client, args)
+
+
+def wait_until_ready(client: httpx.Client, limit: float = 300) -> bool:
+    """llama-server answers 503 while it is still loading the model (e.g. just after a restart)."""
+    start = time.monotonic()
+    said = False
+    while time.monotonic() - start < limit:
+        try:
+            if client.get("/health", timeout=5).status_code == 200:
+                if said:
+                    print(" ready!\n")
+                return True
+        except httpx.HTTPError:
+            pass  # not listening yet
+        if not said:
+            print("Waiting for the AI to finish loading the model", end="", flush=True)
+            said = True
+        print(".", end="", flush=True)
+        time.sleep(3)
+    print()
+    return False
 
 
 def ask(client: httpx.Client, args, messages: list[dict]) -> tuple[str, dict, float]:
