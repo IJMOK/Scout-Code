@@ -45,18 +45,23 @@ Shared:
 
 ## 2. Choose the model
 
-`download-models.sh` fetches the **3B** model by default. To compare models, download the others and run the benchmark on each one:
+`download-models.sh` fetches the **3B** model by default. To see whether another model works better on your Pis, download it and let the benchmark compare them side by side:
 
 ```bash
-./setup/download-models.sh all
-sudo ln -sf /opt/scout/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf /opt/scout/models/current.gguf
-sudo systemctl restart scout-llm
-/opt/scout/venv/bin/python setup/benchmark.py
+./setup/download-models.sh 4b
+sudo /opt/scout/venv/bin/python setup/benchmark.py --compare 3b 4b --show
 ```
 
-The benchmark sends 10 typical scout requests and reports the seconds each one took and whether the edits applied. Aim for **under ~90 s per request** and **7/10 or more applied**.
+For each model the benchmark:
 
-Add `--repeat` to run everything twice. **"read s"** is the time the Pi spends reading the game before it writes anything. It's long (around 60-90 s with the 3B model) the first time a Pi sees a game, and short once the game is in the Pi's cache. The portal **warms up** both Pis by pre-loading all 8 starter games when it starts, so the second pass is closer to what scouts experience. Add `--show` to print what the AI wrote for any request that failed.
+1. switches the AI to it;
+2. pre-loads the games, like the website does;
+3. sends 10 typical scout requests, with the same automatic retry the studio uses;
+4. checks whether each edited game still looks like **working code**.
+
+At the end it puts your original model back, restarts the website, and prints a comparison table with a recommendation. The edited games are saved in `/tmp/scout-compare/` if you want to play them. It takes about 15-25 minutes.
+
+Aim for **under ~90 s per request** and **8/10 or more working games**. To check a single model, run it without `--compare`. Add `--show` to print what the AI wrote whenever it needed a retry or broke the game.
 
 | Model | Expect | Use when |
 |---|---|---|

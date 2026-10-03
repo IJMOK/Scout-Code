@@ -140,7 +140,16 @@ def apply_blocks(code: str, blocks: list[Block]) -> ApplyResult:
             continue
         new_code = _replace_once(code, block.search, block.replace)
         if new_code is None:
-            errors.append(f"Edit {i}: could not find this code to change: {first!r}")
+            places = count_places(code, block.search)
+            if places > 1:
+                errors.append(f"Edit {i}: {first!r} appears in {places} places, so I can't tell which one. "
+                              "Include the line above it as well.")
+                continue
+            hint = closest_lines(code, block.search)
+            msg = f"Edit {i}: could not find this code to change: {first!r}."
+            if hint:
+                msg += " The closest line in the game is " + " / ".join(f"{h!r}" for h in hint) + ". Copy it exactly."
+            errors.append(msg)
             continue
         code = new_code
         changed_lines |= search_keys
@@ -220,7 +229,8 @@ def _replace_once(code: str, search: str, replace: str, fuzzy: bool = True) -> s
         starts_line = idx == 0 or code[idx - 1] == "\n"
         ends_line = end == len(code) or code[end] == "\n" or search.endswith("\n")
         part_of_line = not (starts_line and ends_line)
-        if not part_of_line or (len(search.strip()) >= MIN_PART_LINE and code.count(search) == 1):
+        unique = code.count(search) == 1
+        if unique and (not part_of_line or len(search.strip()) >= MIN_PART_LINE):
             if not replace and starts_line and code[end:end + 1] == "\n":
                 end += 1  # deleting whole lines: don't leave a blank line behind
             return code[:idx] + replace + code[end:]
@@ -232,11 +242,13 @@ def _replace_once(code: str, search: str, replace: str, fuzzy: bool = True) -> s
     n = len(search_lines)
 
     # 2. Same lines, ignoring spacing.  3. ...and ignoring // comments and trailing , or ;
+    #    Only when it's in exactly one place: never guess which "}" was meant.
     for key in (_norm, _loose):
-        want = [key(ln) for ln in search_lines]
-        for start in range(len(code_lines) - n + 1):
-            if all(key(code_lines[start + k]) == want[k] for k in range(n)):
-                return _swap_lines(code_lines, start, n, search_lines[0], replace)
+        starts = _line_matches(code_lines, search_lines, key)
+        if len(starts) == 1:
+            return _swap_lines(code_lines, starts[0], n, search_lines[0], replace)
+        if len(starts) > 1:
+            return None
 
     # 4. One line that is part of a longer line, e.g. the model wrote
     #    "drawEmoji(emoji, x, y, size) {" for "function drawEmoji(emoji, x, y, size) {".
@@ -254,6 +266,39 @@ def _replace_once(code: str, search: str, replace: str, fuzzy: bool = True) -> s
     if start is None:
         return None
     return _swap_lines(code_lines, start, n, search_lines[0], replace)
+
+
+def _line_matches(code_lines: list[str], search_lines: list[str], key) -> list[int]:
+    want = [key(ln) for ln in search_lines]
+    n = len(want)
+    return [start for start in range(len(code_lines) - n + 1)
+            if all(key(code_lines[start + k]) == want[k] for k in range(n))]
+
+
+def count_places(code: str, search: str) -> int:
+    """How many places in the game match this SEARCH text (ignoring spacing and comments)?"""
+    lines = _trim_blank(search.split("\n"))
+    if not lines:
+        return 0
+    code_lines = code.split("\n")
+    return max(code.count(search), *(len(_line_matches(code_lines, lines, key)) for key in (_norm, _loose)))
+
+
+def closest_lines(code: str, search: str, limit: int = 2) -> list[str]:
+    """The real game lines most like the first SEARCH lines, to help the AI's next try."""
+    import difflib
+
+    code_lines = [ln.strip() for ln in code.split("\n") if _loose(ln)]
+    found: list[str] = []
+    for want in [ln for ln in search.split("\n") if _loose(ln)][:limit]:
+        best, score = None, 0.6
+        for line in code_lines:
+            ratio = difflib.SequenceMatcher(None, _loose(line), _loose(want)).ratio()
+            if ratio > score:
+                best, score = line, ratio
+        if best and best not in found and _loose(best) != _loose(want):
+            found.append(best)
+    return found
 
 
 def _trim_blank(lines: list[str]) -> list[str]:

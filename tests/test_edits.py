@@ -361,3 +361,69 @@ def test_two_line_fuzzy_still_works():
         "  player.x += 2 * CONFIG.playerSpeed;\n  player.y += 2 * CONFIG.playerSpeed;\n>>>>>>> REPLACE"))
     assert res.ok, res.errors
     assert "2 * CONFIG.playerSpeed;\n  player.y += 2 *" in res.code
+
+
+# ---- Round 4: no guessing between identical places, and "did you mean" hints ----
+
+BOSS_RETRY_REPLY = """PLAN: Add a boss that appears every 100 points.
+<<<<<<< SEARCH
+  if (frame % CONFIG.enemyEvery === 0) {
+=======
+  if (frame % CONFIG.enemyEvery === 0) {
+    if (score % 100 === 0) {
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+      enemies.push({ x: 30 + Math.random() * (W - 60), y: -20, wobble: Math.random() * 6 });
+=======
+      enemies.push({ x: 30 + Math.random() * (W - 60), y: -20, wobble: Math.random() * 6, boss: true });
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+    }
+=======
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  }
+=======
+>>>>>>> REPLACE
+"""
+
+
+def test_lone_braces_are_never_guessed():
+    code = (STARTERS / "space-shooter.html").read_text(encoding="utf-8")
+    res = apply_reply(code, parse_reply(BOSS_RETRY_REPLY))
+    assert not res.ok
+    brace_errors = [e for e in res.errors if "'}'" in e]
+    assert len(brace_errors) == 2 and all("places" in e and "line above" in e for e in brace_errors)
+
+    partial = apply_reply(code, parse_reply(BOSS_RETRY_REPLY), allow_partial=True)
+    assert partial.applied == 2  # only the two edits that point at one clear place
+    assert partial.code.count("}") == code.count("}")  # no brace was deleted
+
+
+def test_duplicate_lines_are_refused_exactly_and_after_normalising():
+    code = "function a() {\n  x = 1;\n}\nfunction b() {\n  x = 1;\n}\n"
+    exact = apply_reply(code, parse_reply("<<<<<<< SEARCH\n  x = 1;\n=======\n  x = 2;\n>>>>>>> REPLACE"))
+    loose = apply_reply(code, parse_reply("<<<<<<< SEARCH\nx = 1 // set x\n=======\nx = 2;\n>>>>>>> REPLACE"))
+    for res in (exact, loose):
+        assert not res.ok and res.code == code and "2 places" in res.errors[0]
+    # One line of context makes it unique, which is fine.
+    ok = apply_reply(code, parse_reply("<<<<<<< SEARCH\nfunction b() {\n  x = 1;\n=======\nfunction b() {\n  x = 2;\n>>>>>>> REPLACE"))
+    assert ok.ok and ok.code.count("x = 1;") == 1
+
+
+def test_did_you_mean_hints():
+    catch = (STARTERS / "catch.html").read_text(encoding="utf-8")
+    res = apply_reply(catch, parse_reply(STAR_REPLY))
+    assert "lives = CONFIG.lives;" in res.errors[0] and "Copy it exactly" in res.errors[0]
+
+    dodge = (STARTERS / "dodge.html").read_text(encoding="utf-8")
+    res = apply_reply(dodge, parse_reply(DODGE_REPLY))
+    assert "safeTime = 60" in res.errors[0]
+
+    res = apply_reply(catch, parse_reply("<<<<<<< SEARCH\nquantumFluxCapacitor.engage(9000);\n=======\nx\n>>>>>>> REPLACE"))
+    assert "closest" not in res.errors[0]
+
+
+def test_lines_the_agent_relies_on_are_unique_in_every_starter():
+    for path in STARTERS.glob("*.html"):
+        assert path.read_text(encoding="utf-8").count("  requestAnimationFrame(loop);") == 1, path.name

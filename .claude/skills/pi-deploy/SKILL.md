@@ -28,6 +28,10 @@ Speed: most of a request's time is the Pi *reading* the game (the prompt). `--ca
 
 The llama.cpp version is pinned with `LLAMA_REF` in `install.sh`. If you change it, check that the flags in `setup/systemd/scout-llm.service` still exist (`llama-server --help`).
 
+## Compare models
+
+`sudo /opt/scout/venv/bin/python setup/benchmark.py --compare 3b 4b --show` switches `current.gguf` per model, warms up, runs the cases with the studio's retry, flags edits that break the JavaScript (`looks_broken`), and restores the original model and portal in a `finally`.
+
 ## Change the model (same on both Pis)
 
 ```bash
