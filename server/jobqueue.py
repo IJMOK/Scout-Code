@@ -45,6 +45,9 @@ class Worker:
     tokens_per_sec: float = 0.0
     jobs_done: int = 0
     stats: dict = field(default_factory=dict)
+    warm_todo: list[str] = field(default_factory=list)  # starters still to pre-load
+    warm_done: int = 0
+    warm_total: int = 0
 
 
 class Hub:
@@ -78,8 +81,10 @@ class Hub:
 
 
 class JobQueue:
-    def __init__(self, db: DB, workers: list[Worker], hub: Hub, settings: Any):
+    def __init__(self, db: DB, workers: list[Worker], hub: Hub, settings: Any,
+                 warm_sources: dict[str, str] | None = None):
         self.db = db
+        self.warm_sources = warm_sources or {}  # starter id -> starter code
         self.workers = workers
         self.hub = hub
         self.settings = settings
@@ -99,6 +104,19 @@ class JobQueue:
         self.db.execute("UPDATE jobs SET status='queued', worker=NULL WHERE status='running'")
         self._spawn(self._scheduler())
         self._spawn(self._health_loop())
+        self.notify()
+
+    def start_warmup(self) -> None:
+        """Pre-load every starter game into each Pi's prompt cache.
+
+        A team's first request then only has to read their own words, not the
+        whole game (about 80 seconds on a Pi 5 with the 3B model). Warm-ups
+        only run when a Pi has nothing else to do.
+        """
+        for w in self.workers:
+            w.warm_todo = list(self.warm_sources)
+            w.warm_done = 0
+            w.warm_total = len(w.warm_todo)
         self.notify()
 
     def notify(self) -> None:
@@ -171,6 +189,7 @@ class JobQueue:
                 return
             job = self.db.one("SELECT * FROM jobs WHERE status='queued' ORDER BY priority, id LIMIT 1")
             if not job:
+                self._dispatch_warmups()  # only when no scout is waiting
                 return
             last = self.db.value("SELECT last_worker FROM teams WHERE id=?", (job["team_id"],))
             worker = next((w for w in free if w.name == last), free[0])
@@ -179,6 +198,28 @@ class JobQueue:
                             (worker.name, now(), job["id"]))
             self.db.execute("UPDATE teams SET last_worker=? WHERE id=?", (worker.name, job["team_id"]))
             self._spawn(self._run(job, worker))
+
+    def _dispatch_warmups(self) -> None:
+        for w in self.workers:
+            if w.busy_job is None and w.healthy and w.warm_todo:
+                w.busy_job = -1  # -1 = warming up
+                self._spawn(self._warm(w, w.warm_todo.pop(0)))
+
+    async def _warm(self, worker: Worker, starter: str) -> None:
+        # Exactly the messages a first request uses, minus the scouts' words, so the
+        # cached prompt is a prefix of the real one.
+        messages = prompts.edit_messages(self.warm_sources[starter], "")
+        try:
+            async for _ in worker.client.stream_chat(messages, 1, self.settings.temperature):
+                pass
+            worker.warm_done += 1
+        except Exception as e:
+            log.warning("warm-up of %s on %s failed: %s", starter, worker.name, e)
+            worker.healthy = False
+            worker.warm_todo.insert(0, starter)  # try again once the Pi is back
+        finally:
+            worker.busy_job = None
+            self.notify()
 
     def queue_snapshot(self) -> list[dict]:
         return self.db.all(
@@ -273,7 +314,11 @@ class JobQueue:
         base = self.db.one("SELECT * FROM versions WHERE id=?", (job["base_version_id"],))
         reply = parse_reply(reply_text)
         self.db.execute("UPDATE jobs SET plan=? WHERE id=?", (reply.plan, job_id))
-        result = apply_reply(base["code"], reply)
+        # On the last try, keep whatever edits fit: the browser test and the fix step catch the rest.
+        result = apply_reply(base["code"], reply, allow_partial=job["kind"] == "retry")
+        if result.partial:
+            reply.plan = (reply.plan + " (some of the changes didn't fit)").strip()
+            self.db.execute("UPDATE jobs SET plan=? WHERE id=?", (reply.plan, job_id))
 
         if not result.ok:
             error = " ".join(result.errors)

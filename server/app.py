@@ -62,7 +62,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     else:
         workers = [Worker(name=w.name, client=LlamaServer(w.llm, settings.request_timeout, w.key()), stats_url=w.stats)
                    for w in settings.workers]
-    jobs = JobQueue(db, workers, hub, settings)
+    warm_sources = {s["id"]: (STARTERS_DIR / f"{s['id']}.html").read_text(encoding="utf-8") for s in STARTERS}
+    jobs = JobQueue(db, workers, hub, settings, warm_sources)
 
     if not db.get_setting("join_code"):
         db.set_setting("join_code", _new_join_code())
@@ -70,6 +71,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         jobs.start()
+        if settings.warmup:
+            jobs.start_warmup()
         log.info("Scout Code ready. Leader PIN: %s  Join code: %s  Workers: %s",
                  settings.leader_pin, db.get_setting("join_code"), ", ".join(w.name for w in workers))
         yield
@@ -526,7 +529,8 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
             "mock": settings.mock,
             "average_job_seconds": round(jobs.average_seconds(), 1),
             "workers": [{"name": w.name, "healthy": w.healthy, "busy_job": w.busy_job,
-                         "tokens_per_sec": w.tokens_per_sec, "jobs_done": w.jobs_done, "stats": w.stats}
+                         "tokens_per_sec": w.tokens_per_sec, "jobs_done": w.jobs_done, "stats": w.stats,
+                         "warm_done": w.warm_done, "warm_total": w.warm_total, "warm_left": len(w.warm_todo)}
                         for w in jobs.workers],
             "queue": jobs.queue_snapshot(),
             "recent_jobs": recent,
@@ -547,6 +551,11 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
             db.set_setting("event_name", body.event_name.strip()[:80])
         if body.ai_paused is False:
             jobs.notify()
+        return {"ok": True}
+
+    @app.post("/api/leader/warmup")
+    def warmup(_: bool = Depends(leader)):
+        jobs.start_warmup()
         return {"ok": True}
 
     @app.post("/api/leader/join-code")

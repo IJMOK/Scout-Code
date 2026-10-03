@@ -90,6 +90,7 @@ class MockLLM:
     Special words for testing the agent loop:
       "BREAK"  -> produces a game that crashes, so the auto-fix runs
       "NOMATCH" -> produces an edit whose SEARCH text is not in the game
+      "HALFMATCH" -> one edit that fits and one that doesn't, every time
     """
 
     def __init__(self, delay: float = 0.01):
@@ -122,6 +123,10 @@ class MockLLM:
         request = (re.findall(r'(?:asked|had asked): "(.*)"', user) or [""])[0]
         fixing = "Your last change broke" in user or "Your last answer could not be used" in user
 
+        if "HALFMATCH" in request:
+            title = re.search(r'^\s*title:\s*"[^"]*",', code, re.MULTILINE)
+            good = self._block("Rename it.", title.group(0), title.group(0).replace('",', ' 2",')) if title else ""
+            return good + "<<<<<<< SEARCH\nthis line is not there\n=======\nnew\n>>>>>>> REPLACE\n"
         if fixing:
             bad = re.search(r"^.*mockExplodes\(\);.*\n", code, re.MULTILINE)
             if bad:

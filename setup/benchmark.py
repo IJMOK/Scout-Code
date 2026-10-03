@@ -10,6 +10,11 @@ applied to the game. Use it to choose between models:
 
 Rule of thumb for a 2-3 hour session: aim for under ~90 seconds per request
 and at least 7 out of 10 edits applying cleanly.
+
+"read s" is the time the Pi spends reading the game before it writes anything.
+It is long the first time a Pi sees a game and short once it's cached; the
+portal pre-loads ("warms up") all the starters so scouts mostly get the
+short version. Use --repeat to see both.
 """
 
 from __future__ import annotations
@@ -51,6 +56,8 @@ def main() -> None:
     ap.add_argument("--show", action="store_true", help="print the AI's raw reply for requests that failed")
     ap.add_argument("--show-all", action="store_true", help="print every raw reply")
     ap.add_argument("--no-grammar", action="store_true", help="don't force the edit format (to compare)")
+    ap.add_argument("--repeat", action="store_true",
+                    help="run everything twice; the second pass shows speed once games are cached")
     args = ap.parse_args()
 
     headers = {}
@@ -65,10 +72,17 @@ def main() -> None:
     except Exception:
         model = "?"
     print(f"Model: {model}   Server: {args.url}   Grammar: {'off' if args.no_grammar else 'on'}\n")
-    print(f"{'#':>2}  {'game':<14} {'prompt':>7} {'read s':>7} {'gen tok':>7} {'tok/s':>6} {'total s':>8}  result")
+    for pass_no in range(1, 3 if args.repeat else 2):
+        if args.repeat:
+            print(f"--- Pass {pass_no} {'(games now cached: this is what scouts feel)' if pass_no == 2 else ''}")
+        run_cases(client, args)
 
+
+def run_cases(client: httpx.Client, args) -> None:
+    print(f"{'#':>2}  {'game':<14} {'prompt':>7} {'read s':>7} {'gen tok':>7} {'tok/s':>6} {'total s':>8}  result")
     ok = 0
     totals = []
+    reads = []
     for i, (starter, request) in enumerate(CASES[: args.cases], 1):
         code = (ROOT / "server" / "starters" / f"{starter}.html").read_text(encoding="utf-8")
         start = time.monotonic()
@@ -87,9 +101,13 @@ def main() -> None:
         reply = data["choices"][0]["message"]["content"]
         t = data.get("timings", {})
         result = apply_reply(code, parse_reply(reply))
-        verdict = "✅ applied" if result.ok else f"❌ {(result.errors or ['no edits'])[0][:50]}"
+        if result.ok:
+            verdict = "✅ applied" + (f" ({len(result.skipped)} repeated edit{'s' if len(result.skipped) != 1 else ''} skipped)" if result.skipped else "")
+        else:
+            verdict = f"❌ {(result.errors or ['no edits'])[0][:50]}"
         ok += result.ok
         totals.append(total)
+        reads.append(t.get("prompt_ms", 0) / 1000)
         print(f"{i:>2}  {starter:<14} {t.get('prompt_n', 0):>7} {t.get('prompt_ms', 0) / 1000:>7.1f} "
               f"{t.get('predicted_n', 0):>7} {t.get('predicted_per_second', 0):>6.1f} {total:>8.1f}  {verdict}")
         if args.show_all or (args.show and not result.ok):
@@ -99,8 +117,10 @@ def main() -> None:
             print("    └" + "─" * 61)
 
     n = len(totals)
-    print(f"\nEdits that applied: {ok}/{n}    Average time per request: {sum(totals) / n:.0f}s")
-    print("(The browser's test-play then catches crashes and asks the AI to fix them.)")
+    print(f"\nEdits that applied: {ok}/{n}    Average per request: {sum(totals) / n:.0f}s "
+          f"(of which reading the game: {sum(reads) / n:.0f}s)")
+    print("(In the studio, a failed edit gets one automatic retry, and the browser's test-play")
+    print(" catches crashes and asks the AI to fix them.)\n")
 
 
 if __name__ == "__main__":

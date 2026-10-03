@@ -22,7 +22,9 @@ sudo ./setup/install.sh --role basecamp
 sudo ./setup/install.sh --role worker --key "$(ssh scout.local cat /opt/scout/llm-key)"
 ```
 
-To update the code later: `git pull`, then `sudo systemctl restart scout-portal` (basecamp). Re-run `install.sh` only if `setup/` changed. It is idempotent.
+To update the code later: `git pull`, then `sudo ./setup/update-services.sh` on each Pi. That re-renders the systemd units from `setup/systemd/` and restarts them. Re-run `install.sh` only for new packages or a new llama.cpp version. It is idempotent.
+
+Speed: most of a request's time is the Pi *reading* the game (the prompt). `--cache-ram` plus `--cache-reuse` in `scout-llm.service`, and the portal's start-up warm-up of all starters (`JobQueue.start_warmup`), keep that short. `setup/benchmark.py --repeat --show` shows cold vs warm times and any failing replies.
 
 The llama.cpp version is pinned with `LLAMA_REF` in `install.sh`. If you change it, check that the flags in `setup/systemd/scout-llm.service` still exist (`llama-server --help`).
 

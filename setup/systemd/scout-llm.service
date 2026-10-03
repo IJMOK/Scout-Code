@@ -6,12 +6,14 @@ Wants=network-online.target
 [Service]
 User=@USER@
 # One request at a time (-np 1) gets the full speed of the Pi. --cache-ram keeps
-# recent teams' games in memory so their next request starts faster.
+# recent teams' games (and the pre-warmed starters) in memory, and --cache-reuse
+# re-uses the unchanged rest of a game after an edit near the top, so the Pi
+# doesn't have to re-read the whole game every time.
 ExecStart=@SCOUT_DIR@/llama.cpp/build/bin/llama-server \
   --model @SCOUT_DIR@/models/current.gguf \
   --host 0.0.0.0 --port 8080 \
   --ctx-size 8192 -np 1 --threads 4 \
-  --cache-ram 2048 \
+  --cache-ram 2048 --cache-reuse 256 \
   --no-webui \
   --api-key-file @SCOUT_DIR@/llm-key
 Restart=always

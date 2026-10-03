@@ -147,3 +147,39 @@ def test_grammar_sent_only_when_asked(fake):
                                                             grammar=EDIT_GRAMMAR)])
     asyncio.run(with_grammar())
     assert app.state.requests[-1]["grammar"] == EDIT_GRAMMAR
+
+
+def test_warmup_preloads_starters_after_real_jobs(fake, tmp_path):
+    """Warm-ups send each starter's first-request prompt, but never before a waiting scout."""
+    from server import prompts
+
+    url, app = fake
+    db = DB(tmp_path / "w.db")
+    db.execute("INSERT INTO teams(id, name, emoji, pin, token, created_at) VALUES(1,'A','🦊','1234','tok',0)")
+    db.execute("INSERT INTO games(id, team_id, starter, title, created_at) VALUES(1,1,'x','X',0)")
+    db.execute("INSERT INTO versions(id, game_id, code, status, created_at) "
+               "VALUES(1,1,'const CONFIG = {\n  player: \"🚀\",\n};\n','ok',0)")
+    sources = {"one": "<p>game one</p>", "two": "<p>game two</p>", "three": "<p>game three</p>"}
+    db.set_setting("ai_paused", "1")
+    before = len(app.state.requests)
+
+    async def scenario():
+        worker = Worker("pi", LlamaServer(url, api_key=KEY))
+        q = JobQueue(db, [worker], Hub(), _Settings(), sources)
+        q.start()
+        q.start_warmup()
+        q.submit(team_id=1, game_id=1, kind="edit", request="make it a cat", base_version_id=1)
+        db.set_setting("ai_paused", "0")
+        q.notify()
+        for _ in range(300):
+            if worker.warm_done == 3 and worker.busy_job is None:
+                break
+            await asyncio.sleep(0.02)
+        await q.stop()
+        return worker
+
+    worker = asyncio.run(scenario())
+    sent = app.state.requests[before:]
+    assert [r["max_tokens"] for r in sent] == [200, 1, 1, 1]  # the scout's job went first
+    assert [r["messages"] for r in sent[1:]] == [prompts.edit_messages(code, "") for code in sources.values()]
+    assert worker.warm_done == 3 and worker.warm_todo == []

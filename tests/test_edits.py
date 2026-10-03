@@ -144,3 +144,87 @@ def test_code_block_snippet_fallback():
 def test_vague_search_is_not_guessed():
     reply = parse_reply("<<<<<<< SEARCH\nconst SETTINGS = {\n  speed: 99,\n=======\nx\n>>>>>>> REPLACE")
     assert not apply_reply(CONFIG_GAME, reply).ok
+
+
+# ---- Real replies from Qwen2.5-Coder-3B on a Pi 5 (benchmark.py --show) ----
+from pathlib import Path  # noqa: E402
+
+STARTERS = Path(__file__).resolve().parent.parent / "server" / "starters"
+
+SNAKE_REPLY = """PLAN: Change the snake's colour to rainbow.
+<<<<<<< SEARCH
+  snakeColour: "#7cfc00",
+=======
+  snakeColour: "#ff0000",
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  headColour: "#c6ff7a",
+=======
+  headColour: "#00ff00",
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  snakeColour: "#7cfc00",
+=======
+  snakeColour: "#0000ff",
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  snakeColour: "#7cfc00",
+=======
+  snakeColour: "#ffff00",
+>>>>>>> REPLACE
+"""
+
+DODGE_REPLY = """PLAN: Add a shield power-up that protects you for 3 seconds.
+<<<<<<< SEARCH
+  safeTime: 60, // a second of safety after being hit
+=======
+  safeTime: 60, // a second of safety after being hit
+  shieldTime: 3, // new shield time in seconds
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  if (safeTime === 0 && touching(m, player, 30)) {
+=======
+  if (safeTime === 0 && touching(m, player, 30) || (safeTime > 0 && touching(m, player, 30))) {
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+    m.gone = true;
+    lives--;
+    safeTime = 60; // a second of safety after being hit
+=======
+    m.gone = true;
+    lives--;
+    safeTime = 60 - shieldTime; // a second of safety after being hit
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+    beep(110, 0.3);
+=======
+    beep(110, 0.3);
+    if (safeTime === 0) beep(990, 0.1); // new sound for shield
+>>>>>>> REPLACE
+"""
+
+
+def test_real_snake_reply_skips_duplicate_edits():
+    code = (STARTERS / "snake.html").read_text(encoding="utf-8")
+    res = apply_reply(code, parse_reply(SNAKE_REPLY))
+    assert res.ok, res.errors
+    assert res.applied == 2 and len(res.skipped) == 2
+    assert 'snakeColour: "#ff0000"' in res.code and 'headColour: "#00ff00"' in res.code
+
+
+def test_real_dodge_reply_needs_retry_then_partial():
+    code = (STARTERS / "dodge.html").read_text(encoding="utf-8")
+    first_try = apply_reply(code, parse_reply(DODGE_REPLY))
+    assert not first_try.ok and "safeTime: 60" in first_try.errors[0]
+
+    last_try = apply_reply(code, parse_reply(DODGE_REPLY), allow_partial=True)
+    assert last_try.ok and last_try.partial
+    assert last_try.applied == 3
+    assert "60 - shieldTime" in last_try.code  # will crash -> browser test -> fix job
+
+
+def test_unrelated_miss_is_still_an_error():
+    code = (STARTERS / "snake.html").read_text(encoding="utf-8")
+    reply = SNAKE_REPLY + "<<<<<<< SEARCH\n  rainbowMode: true,\n=======\n  rainbowMode: false,\n>>>>>>> REPLACE\n"
+    res = apply_reply(code, parse_reply(reply))
+    assert not res.ok and "rainbowMode" in res.errors[0]

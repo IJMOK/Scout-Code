@@ -55,6 +55,7 @@ class Settings:
     temperature: float = 0.2
     request_timeout: float = 600.0
     use_grammar: bool = True
+    warmup: bool = True
 
     @property
     def db_path(self) -> Path:
@@ -77,6 +78,7 @@ def load_settings() -> Settings:
     s.explain_max_tokens = int(raw.get("explain_max_tokens", s.explain_max_tokens))
     s.temperature = float(raw.get("temperature", s.temperature))
     s.use_grammar = bool(raw.get("use_grammar", s.use_grammar))
+    s.warmup = bool(raw.get("warmup", s.warmup))
     s.mock = os.environ.get("SCOUT_MOCK", str(raw.get("mock", ""))).lower() in ("1", "true", "yes")
     s.mock_delay = float(os.environ.get("SCOUT_MOCK_DELAY", raw.get("mock_delay", s.mock_delay)))
 

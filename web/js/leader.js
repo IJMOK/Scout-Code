@@ -43,7 +43,8 @@ function render() {
     const throttled = st.throttled ? " ⚠️ throttled" : "";
     return `<div class="worker">
       <b><span class="dot ${w.healthy ? "ok" : ""}"></span> ${esc(w.name)}</b>
-      <div>${w.busy_job ? `Working on job #${w.busy_job}` : (w.healthy ? "Ready" : "Not responding")}</div>
+      <div>${w.busy_job === -1 ? "Warming up…" : w.busy_job ? `Working on job #${w.busy_job}` : (w.healthy ? "Ready" : "Not responding")}
+        · ${w.warm_total ? (w.warm_left ? `🔥 warm ${w.warm_done}/${w.warm_total}` : "🔥 Warm ✓") : "not warmed"}</div>
       <div class="muted" style="font-size:14px">🌡️ ${temp}${hot}${throttled} · ⚡ ${w.tokens_per_sec || "-"} tok/s · ${w.jobs_done} jobs
       ${st.load != null ? `· load ${st.load}` : ""} ${st.mem_used_pct != null ? `· mem ${st.mem_used_pct}%` : ""}</div>
     </div>`;
@@ -120,6 +121,7 @@ $("#login").onsubmit = async e => {
 $("#t-ai").onclick = () => post("/api/leader/settings", { ai_paused: !L.ai_paused });
 $("#t-vote").onclick = () => post("/api/leader/settings", { voting_frozen: !L.voting_frozen });
 $("#t-awards").onclick = () => post("/api/leader/settings", { awards_revealed: !L.awards_revealed });
+$("#btn-warm").onclick = () => post("/api/leader/warmup");
 $("#btn-newcode").onclick = () => post("/api/leader/join-code");
 $("#btn-name").onclick = () => post("/api/leader/settings", { event_name: $("#event-name").value });
 

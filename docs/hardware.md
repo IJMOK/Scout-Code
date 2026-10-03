@@ -56,6 +56,8 @@ sudo systemctl restart scout-llm
 
 The benchmark sends 10 typical scout requests and reports the seconds each one took and whether the edits applied. Aim for **under ~90 s per request** and **7/10 or more applied**.
 
+Add `--repeat` to run everything twice. **"read s"** is the time the Pi spends reading the game before it writes anything. It's long (around 60-90 s with the 3B model) the first time a Pi sees a game, and short once the game is in the Pi's cache. The portal **warms up** both Pis by pre-loading all 8 starter games when it starts, so the second pass is closer to what scouts experience. Add `--show` to print what the AI wrote for any request that failed.
+
 | Model | Expect | Use when |
 |---|---|---|
 | 1.5B | Fastest, more mistakes | Big group, short session |
@@ -66,6 +68,13 @@ The benchmark sends 10 typical scout requests and reports the seconds each one t
 Use the **same model on both Pis**.
 
 > These model files are hosted on Hugging Face. If a download fails, the script stops with a clear message. Search Hugging Face for the model name with "GGUF" and update the URL in `setup/download-models.sh`.
+
+## Updating after `git pull`
+
+```bash
+cd ~/scout-code && git pull
+sudo ./setup/update-services.sh     # on BOTH Pis: refreshes the AI and portal services and restarts them
+```
 
 ## 3. Network for the day
 
@@ -80,7 +89,7 @@ Use the **same model on both Pis**.
 
 With the internet unplugged:
 
-1. Open `/leader`. Both workers should show a green dot and a temperature.
+1. Open `/leader`. Both workers should show a green dot and a temperature, and after a few minutes **🔥 Warm ✓**.
 2. With 3 laptops, create teams, make 3 changes each, publish, then rate each other's games.
 3. Watch the dashboard. Temperatures should stay below about 80 °C. If one shows ⚠️ *throttled*, improve the cooling or the power supply.
 4. Optionally load-test from a laptop: `python setup/load_test.py --url http://scout.local --leader-pin <PIN> --teams 6`

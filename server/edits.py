@@ -47,6 +47,8 @@ class ApplyResult:
     code: str
     applied: int
     errors: list[str]
+    skipped: list[str] = field(default_factory=list)
+    partial: bool = False  # some edits were left out (only allowed on the last try)
 
     @property
     def ok(self) -> bool:
@@ -115,25 +117,42 @@ def _find_full_file(text: str) -> str | None:
 
 
 def apply_blocks(code: str, blocks: list[Block]) -> ApplyResult:
+    original = code
     applied = 0
     errors: list[str] = []
+    skipped: list[str] = []
+    changed_lines: set[str] = set()  # lines earlier edits in this reply have already changed
     for i, block in enumerate(blocks, 1):
         if not block.search.strip():
             errors.append(f"Edit {i}: the SEARCH part was empty.")
             continue
+        first = block.search.strip().splitlines()[0][:80]
+        search_keys = {_loose(ln) for ln in block.search.split("\n") if _loose(ln)}
+        # Small models often edit the same line twice. The first edit already changed
+        # it, so skip this one (before fuzzy matching could land it on the new line).
+        if (search_keys & changed_lines and _replace_once(code, block.search, block.replace, fuzzy=False) is None
+                and _replace_once(original, block.search, block.replace) is not None):
+            skipped.append(f"Edit {i}: changes a line that an earlier edit already changed: {first!r}")
+            continue
         new_code = _replace_once(code, block.search, block.replace)
         if new_code is None:
-            first = block.search.strip().splitlines()[0][:80]
             errors.append(f"Edit {i}: could not find this code to change: {first!r}")
             continue
         code = new_code
+        changed_lines |= search_keys
         applied += 1
-    return ApplyResult(code=code, applied=applied, errors=errors)
+    return ApplyResult(code=code, applied=applied, errors=errors, skipped=skipped)
 
 
-def apply_reply(code: str, reply: ParsedReply) -> ApplyResult:
+def apply_reply(code: str, reply: ParsedReply, allow_partial: bool = False) -> ApplyResult:
+    """Apply the AI's reply. With allow_partial, keep the edits that fit even if others didn't."""
     if reply.blocks:
-        return apply_blocks(code, reply.blocks)
+        result = apply_blocks(code, reply.blocks)
+        if allow_partial and result.applied and result.errors:
+            result.skipped += result.errors
+            result.errors = []
+            result.partial = True
+        return result
     if reply.full_file:
         return ApplyResult(code=reply.full_file, applied=1, errors=[])
     if reply.snippets:
@@ -187,7 +206,7 @@ def _anchor_replace(code: str, snippet: str) -> str | None:
     return None
 
 
-def _replace_once(code: str, search: str, replace: str) -> str | None:
+def _replace_once(code: str, search: str, replace: str, fuzzy: bool = True) -> str | None:
     # 1. Exact match.
     idx = code.find(search)
     if idx != -1:
@@ -217,6 +236,8 @@ def _replace_once(code: str, search: str, replace: str) -> str | None:
 
     # 3. Small models often retype lines without their // comments, or with
     #    small slips. Find the stretch of the game that matches best.
+    if not fuzzy:
+        return None
     start = _best_window(code_lines, search_lines)
     if start is None:
         return None
@@ -253,13 +274,13 @@ def _best_window(code_lines: list[str], search_lines: list[str]) -> int | None:
                 ratios.append(1.0 if have == want[k] else 0.0)
             else:
                 ratios.append(difflib.SequenceMatcher(None, have, want[k]).ratio())
-        if ratios[0] >= 0.8 and min(ratios) >= 0.6:
+        if ratios[0] >= 0.9 and min(ratios) >= 0.75:
             scored.append((sum(ratios) / n, start))
     if not scored:
         return None
     scored.sort(reverse=True)
     best, start = scored[0]
-    if best < 0.85:
+    if best < 0.9:
         return None
     if len(scored) > 1 and scored[1][0] >= best - 0.02 and scored[1][1] != start:
         return None  # two places match equally well: too risky to guess

@@ -256,3 +256,15 @@ def test_unusable_answer_gets_a_retry_prompt_on_the_original(client, app):
     msgs, _ = app.state.jobs._messages_for(retry)
     assert "Your last answer could not be used" in msgs[-1]["content"]
     assert "broke the game" not in msgs[-1]["content"]
+
+
+def test_partial_edit_accepted_on_the_retry(client, app):
+    c, _ = make_team(app, "Half")
+    gid = new_game(c, "catch")
+    c.post(f"/api/games/{gid}/ask", json={"request": "HALFMATCH please"})
+    vid = wait_for(lambda: c.get(f"/api/games/{gid}").json()["pending_test_version_id"])
+    v = c.get(f"/api/versions/{vid}").json()
+    assert 'title: "Fruit Catcher 2",' in v["code"]
+    assert "didn't fit" in v["plan"]
+    kinds = [j["kind"] for j in app.state.db.all("SELECT kind FROM jobs ORDER BY id")]
+    assert kinds == ["edit", "retry"]

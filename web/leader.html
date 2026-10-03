@@ -53,7 +53,11 @@
     </section>
 
     <section class="card wide">
-      <h2>AI workers (Raspberry Pis)</h2>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">AI workers (Raspberry Pis)</h2>
+        <button class="btn small" id="btn-warm">🔥 Warm up AI</button>
+      </div>
+      <p class="muted" style="font-size:14px">Warming up pre-loads the 8 starter games into each Pi, so every team's first request is much faster. It happens automatically at start-up and never delays a scout. Do it again if a Pi was restarted.</p>
       <div class="workers" id="workers"></div>
     </section>
 

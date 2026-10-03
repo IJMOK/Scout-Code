@@ -78,15 +78,14 @@ chmod 600 "$SCOUT_DIR/llm-key"
 chown "$RUN_USER":"$RUN_USER" "$SCOUT_DIR/llm-key"
 
 step "Installing services"
-render() {
-  sed -e "s#@USER@#$RUN_USER#g" -e "s#@SCOUT_DIR@#$SCOUT_DIR#g" -e "s#@APP_DIR@#$APP_DIR#g" "$1" > "/etc/systemd/system/$(basename "$1")"
-}
-render "$APP_DIR/setup/systemd/scout-llm.service"
-render "$APP_DIR/setup/systemd/scout-stats.service"
+# shellcheck source=setup/lib.sh
+source "$APP_DIR/setup/lib.sh"
+render_unit "$APP_DIR/setup/systemd/scout-llm.service"
+render_unit "$APP_DIR/setup/systemd/scout-stats.service"
 SERVICES=(scout-llm scout-stats)
 
 if [[ "$ROLE" == "basecamp" ]]; then
-  render "$APP_DIR/setup/systemd/scout-portal.service"
+  render_unit "$APP_DIR/setup/systemd/scout-portal.service"
   SERVICES+=(scout-portal)
   CONFIG="$SCOUT_DIR/data/config.json"
   if [[ ! -s "$CONFIG" ]]; then

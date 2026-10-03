@@ -27,6 +27,7 @@ PLAN: Swap the player emoji for a dinosaur.
 
 Rules:
 - SEARCH must be copied exactly from the game, a few lines only, enough to be unique.
+- Each SEARCH must be different lines: never change the same line twice. Only use lines that really exist in the game.
 - Make the smallest change that does what they asked. Keep the game working.
 - Put new settings in CONFIG when it makes sense.
 - Keep everything friendly and suitable for children. No violence beyond cartoon games, nothing scary or rude.

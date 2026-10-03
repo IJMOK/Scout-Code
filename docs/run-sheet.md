@@ -5,8 +5,8 @@
 
 ## Before they arrive (30 min)
 
-- [ ] Power up the router, then both Pis. Wait about 2 minutes.
-- [ ] Open `/leader` on the leader laptop. Check both workers are 🟢, and set the **event name**.
+- [ ] Power up the router, then both Pis, **at least 20 minutes before** scouts arrive.
+- [ ] Open `/leader` on the leader laptop. Check both workers are 🟢 and show **🔥 Warm ✓**, then set the **event name**. Warming up pre-loads the starter games so first requests are fast. It starts by itself; press **🔥 Warm up AI** if a Pi was restarted.
 - [ ] Put `/leader` on the projector so the **join code** and the address (`http://scout.local` or the IP) are visible.
 - [ ] Open `/studio` on each laptop's browser, so it lands on the join page.
 - [ ] **Pause the AI** until the build starts, so nobody starts early.
