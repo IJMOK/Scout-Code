@@ -12,6 +12,7 @@ RUN_USER="${SUDO_USER:-pi}"
 source "$APP_DIR/setup/lib.sh"
 
 install_shutdown_permission
+restore_model_after_crash
 
 SERVICES=()
 for unit in scout-llm scout-stats scout-portal; do

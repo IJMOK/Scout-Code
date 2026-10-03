@@ -36,6 +36,8 @@ function render() {
   $("#t-awards").textContent = L.awards_revealed ? "🙈 Hide awards" : "🏆 Reveal awards";
   $("#avg").textContent = `Average AI job: ${L.average_job_seconds}s${L.mock ? " · ⚠️ MOCK AI (development mode)" : ""}`;
 
+  const models = new Set(L.workers.map(w => (w.stats || {}).model).filter(Boolean));
+  $("#model-warning").classList.toggle("hidden", models.size < 2);
   $("#workers").innerHTML = L.workers.map(w => {
     const st = w.stats || {};
     const temp = st.temp_c != null ? `${st.temp_c}°C` : "?";
@@ -48,6 +50,7 @@ function render() {
         · ${w.warm_total ? (w.warm_left ? `🔥 warm ${w.warm_done}/${w.warm_total}` : "🔥 Warm ✓") : "not warmed"}</div>
       <div class="muted" style="font-size:14px">🌡️ ${temp}${hot}${throttled} · ⚡ ${w.tokens_per_sec || "-"} tok/s · ${w.jobs_done} jobs
       ${st.load != null ? `· load ${st.load}` : ""} ${st.mem_used_pct != null ? `· mem ${st.mem_used_pct}%` : ""}</div>
+      ${st.model ? `<div class="muted" style="font-size:13px">🧠 ${esc(st.model.replace(/\.gguf$/, ""))}</div>` : ""}
       ${noOff}
     </div>`;
   }).join("");

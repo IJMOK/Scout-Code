@@ -88,9 +88,12 @@ def main() -> None:
                     help="run everything twice; the second pass shows speed once games are cached")
     ap.add_argument("--compare", nargs="+", metavar="MODEL",
                     help="compare models, e.g. --compare 3b 4b (needs sudo; restores your model afterwards)")
+    ap.add_argument("--force", action="store_true",
+                    help="with --compare: try models even if they look too big for this Pi's memory")
     args = ap.parse_args()
 
     client = make_client(args)
+    restore_after_crash()
     if args.compare:
         compare_models(client, args)
         return
@@ -318,6 +321,121 @@ def switch_model(path: Path) -> None:
     systemctl("restart", "scout-llm")
 
 
+# --- crash safety: if the Pi dies mid-compare, the next run (or update-services.sh) puts the model back
+
+def restore_marker() -> Path:
+    return MODELS_DIR / ".compare-restore"
+
+
+def restore_after_crash() -> bool:
+    marker = restore_marker()
+    if not marker.exists():
+        return False
+    target = Path(marker.read_text().strip())
+    print(f"⚠️  A model comparison didn't finish last time (the Pi may have restarted).\n"
+          f"   Putting the AI back on {target.name}…")
+    if os.geteuid() != 0:
+        sys.exit("   Please run this once with sudo so it can switch the model back.")
+    switch_model(target)
+    marker.unlink()
+    print("   Done.\n")
+    return True
+
+
+# --- "will this model fit in the Pi's memory?"
+
+CTX_SIZE = 8192          # matches setup/systemd/scout-llm.service
+CACHE_RAM = 2048 * 2**20  # --cache-ram 2048
+HEADROOM = 2**30          # the system, the website and llama.cpp's working buffers
+SAFE_FRACTION = 0.8       # keep a fifth of the RAM free: a Pi that runs out simply freezes
+
+
+def gguf_metadata(path: Path, wanted: tuple[str, ...] = ("block_count", "head_count_kv", "head_count",
+                                                          "key_length", "value_length", "embedding_length")) -> dict:
+    """Read the few numbers we need from a GGUF file's header (no libraries needed)."""
+    import struct
+
+    scalar = {0: "B", 1: "b", 2: "H", 3: "h", 4: "I", 5: "i", 6: "f", 7: "?", 10: "Q", 11: "q", 12: "d"}
+    found: dict = {}
+    with open(path, "rb") as f:
+        def read(fmt):
+            size = struct.calcsize("<" + fmt)
+            return struct.unpack("<" + fmt, f.read(size))[0]
+
+        def read_str():
+            return f.read(read("Q")).decode("utf-8", "replace")
+
+        def read_value(vtype):
+            if vtype in scalar:
+                return read(scalar[vtype])
+            if vtype == 8:
+                return read_str()
+            if vtype == 9:
+                item_type, count = read("I"), read("Q")
+                if item_type in scalar:  # numbers: keep small arrays, skip big ones
+                    size = struct.calcsize("<" + scalar[item_type])
+                    if count <= 1024:
+                        return [read(scalar[item_type]) for _ in range(count)]
+                    f.seek(size * count, 1)
+                    return None
+                for _ in range(count):  # strings, e.g. the tokenizer's vocabulary
+                    read_value(item_type) if item_type != 8 else f.seek(read("Q"), 1)
+                return None
+            raise ValueError(f"unknown GGUF value type {vtype}")
+
+        if f.read(4) != b"GGUF":
+            raise ValueError("not a GGUF file")
+        try:
+            read("I")  # version
+            read("Q")  # tensor count
+            n_keys = read("Q")
+        except struct.error as e:
+            raise ValueError("GGUF header is cut short") from e
+        for _ in range(n_keys):
+            key, value = read_str(), read_value(read("I"))
+            if key == "general.architecture":
+                found["architecture"] = value
+            elif key.split(".")[-1] in wanted and key.startswith(found.get("architecture", "") + "."):
+                found[key.split(".")[-1]] = value
+    return found
+
+
+def estimated_memory(path: Path) -> int:
+    """Bytes the AI service needs with this model: weights + context + prompt cache + headroom."""
+    size = path.stat().st_size
+    try:
+        meta = gguf_metadata(path)
+        kv_heads = meta.get("head_count_kv") or meta["head_count"]
+        kv_heads = max(kv_heads) if isinstance(kv_heads, list) else kv_heads
+        head_count = meta["head_count"]
+        head_count = max(head_count) if isinstance(head_count, list) else head_count
+        k_dim = meta.get("key_length") or meta["embedding_length"] // head_count
+        v_dim = meta.get("value_length") or k_dim
+        kv_per_token = meta["block_count"] * kv_heads * (k_dim + v_dim) * 2  # f16
+        return size + kv_per_token * CTX_SIZE + CACHE_RAM + HEADROOM
+    except Exception:  # can't read it (truncated, unknown type, ...): assume the worst
+        return int(size * 2.5) + CACHE_RAM
+
+
+def total_memory() -> int:
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) * 1024
+    except OSError:
+        pass
+    return 0
+
+
+def too_big(path: Path) -> str | None:
+    need, have = estimated_memory(path), total_memory()
+    if have and need > have * SAFE_FRACTION:
+        return (f"needs about {need / 2**30:.1f} GB but this Pi has {have / 2**30:.1f} GB "
+                f"and should keep a fifth free")
+    return None
+
+
 def compare_models(client: httpx.Client, args) -> None:
     if os.geteuid() != 0:
         sys.exit("--compare switches the AI model, so run it with sudo:\n"
@@ -330,6 +448,8 @@ def compare_models(client: httpx.Client, args) -> None:
 
     link = MODELS_DIR / "current.gguf"
     original = Path(os.readlink(link)) if link.is_symlink() else None
+    if original:
+        restore_marker().write_text(str(original))  # in case the Pi dies before we put it back
     portal_was_running = systemctl("is-active", "--quiet", "scout-portal", check=False).returncode == 0
     summaries = {}
     try:
@@ -338,6 +458,10 @@ def compare_models(client: httpx.Client, args) -> None:
             systemctl("stop", "scout-portal")
         for name, path in zip(args.compare, paths):
             print(f"=================== {name}: {path.name} ===================")
+            problem = too_big(path)
+            if problem and not getattr(args, "force", False):
+                print(f"Skipping {name}: it {problem}. (Use --force to try anyway.)\n")
+                continue
             switch_model(path)
             if not wait_until_ready(client, limit=600):
                 print(f"{name} didn't load; skipping it. (sudo journalctl -u scout-llm -n 30)\n")
@@ -351,6 +475,7 @@ def compare_models(client: httpx.Client, args) -> None:
         print("Putting things back as they were…")
         if original:
             switch_model(original)
+        restore_marker().unlink(missing_ok=True)
         if portal_was_running:
             systemctl("start", "scout-portal")
 

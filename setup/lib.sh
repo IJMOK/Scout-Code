@@ -21,3 +21,17 @@ install_shutdown_permission() {
   fi
   rm -f "$tmp"
 }
+
+# If a model comparison was cut short (e.g. the Pi crashed), put the original AI model back.
+restore_model_after_crash() {
+  local marker="$SCOUT_DIR/models/.compare-restore"
+  if [[ -f "$marker" ]]; then
+    local target
+    target="$(cat "$marker")"
+    if [[ -f "$target" ]]; then
+      ln -sfn "$target" "$SCOUT_DIR/models/current.gguf"
+      echo "⚠️  A model comparison didn't finish last time: the AI is back on $(basename "$target")."
+    fi
+    rm -f "$marker"
+  fi
+}

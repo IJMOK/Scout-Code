@@ -25,6 +25,8 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+MODELS_DIR = Path(os.environ.get("SCOUT_MODELS_DIR", "/opt/scout/models"))
+
 # Overridable so tests never switch anything off.
 POWEROFF_CMD = shlex.split(os.environ.get("SCOUT_POWEROFF_CMD", "sudo -n /usr/bin/systemctl poweroff"))
 
@@ -48,6 +50,11 @@ def read_stats() -> dict:
                 info[key] = int(val.strip().split()[0])
         stats["mem_used_pct"] = round(100 * (1 - info["MemAvailable"] / info["MemTotal"]))
     except (OSError, KeyError, ValueError):
+        pass
+    try:
+        # Which AI model this Pi is running (current.gguf is a link to it).
+        stats["model"] = Path(os.readlink(MODELS_DIR / "current.gguf")).name
+    except OSError:
         pass
     if shutil.which("vcgencmd"):
         try:

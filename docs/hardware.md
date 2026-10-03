@@ -63,12 +63,14 @@ At the end it puts your original model back, restarts the website, and prints a 
 
 Aim for **under ~90 s per request** and **8/10 or more working games**. To check a single model, run it without `--compare`. Add `--show` to print what the AI wrote whenever it needed a retry or broke the game.
 
-| Model | Expect | Use when |
+| Model | On an 8 GB Pi 5 (tested) | Use when |
 |---|---|---|
 | 1.5B | Fastest, more mistakes | Big group, short session |
-| **3B (default)** | Good balance | Most events |
-| 4B (Qwen3) | Slower, often follows instructions better | If 3B keeps failing to apply edits |
-| 7B | Best code, roughly half the speed of 3B | Small, patient group |
+| **3B (default)** | **About 45 s per request, 9/10 working games** | **Recommended** |
+| 4B (Qwen3) | Too big: 2 words/s, its cache doesn't fit, and the Pi crashed during testing | Not on an 8 GB Pi |
+| 7B | Too big for an 8 GB Pi with these settings | Not on an 8 GB Pi |
+
+`--compare` checks each model's memory needs first and skips models that won't fit safely (`--force` to try anyway). If a comparison is cut short, for example because the Pi restarted, the next benchmark run or `update-services.sh` puts your original model back. The leader dashboard shows which model each Pi is running.
 
 Use the **same model on both Pis**.
 
@@ -136,6 +138,7 @@ sudo systemctl start scout-portal
 |---|---|
 | Red dot on a worker | `sudo systemctl status scout-llm` on that Pi. Check the model exists: `ls -l /opt/scout/models/current.gguf` |
 | Everything is slow | Check temperatures on the dashboard. One Pi down means half speed. Try the 1.5B model. |
+| A Pi drops off the network under heavy load | It probably ran out of memory or power. Check `journalctl -b -1 -k --no-pager \| grep -iE "out of memory\|voltage"` and `vcgencmd get_throttled` (`0x0` is good; `0x5…`/`0x50005` means under-voltage). Use the official 27 W power supply and the 3B model. |
 | "The AI got confused" every time | Run `setup/benchmark.py --show` and look at what the AI actually wrote. On the dashboard, click a row in *Recent AI requests* to see the same thing. The AI is forced into the edit format by a grammar; to compare without it, add `"use_grammar": false` to `config.json` or run the benchmark with `--no-grammar`. |
 | A team is stuck "Working…" | Dashboard → Queue → **Stop**. They can ask again. |
 | A team forgot their PIN | Dashboard → Teams shows every PIN. **New PIN** issues a new one. |
