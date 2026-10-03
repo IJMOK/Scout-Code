@@ -60,7 +60,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         workers = [Worker(name="mock-1", client=MockLLM(settings.mock_delay)),
                    Worker(name="mock-2", client=MockLLM(settings.mock_delay))]
     else:
-        workers = [Worker(name=w.name, client=LlamaServer(w.llm, settings.request_timeout), stats_url=w.stats)
+        workers = [Worker(name=w.name, client=LlamaServer(w.llm, settings.request_timeout, w.key()), stats_url=w.stats)
                    for w in settings.workers]
     jobs = JobQueue(db, workers, hub, settings)
 
@@ -233,6 +233,8 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
     def create_team(body: NewTeam, response: Response):
         if body.join_code.strip().upper() != db.get_setting("join_code"):
             raise HTTPException(400, "That join code isn't right. Check the big screen!")
+        if body.emoji not in TEAM_EMOJIS:
+            raise HTTPException(400, "Please pick one of the team emojis.")
         name = re.sub(r"\s+", " ", body.name).strip()
         if safety.is_blocked(name):
             raise HTTPException(400, "Please pick a different team name.")

@@ -1,0 +1,105 @@
+# Hardware and setup
+
+## Shopping list
+
+For **each** of the two Pis:
+
+| Item | Notes |
+|---|---|
+| Raspberry Pi 5, **8 GB** | 4 GB is too small for the AI plus its cache. |
+| Official **Active Cooler** | **Essential.** The AI runs all four CPU cores flat out. Without a cooler the Pi throttles and slows right down. |
+| Official **27 W USB-C** power supply | Phone chargers cause under-voltage and random slowdowns. |
+| M.2 HAT+ (or similar NVMe base) + **NVMe SSD** (128 GB or more) | Loads the model in seconds and is far more reliable than SD cards. A good 64 GB microSD works if you must. |
+| A case with airflow that fits the HAT and cooler | Or use no case and keep the Pis somewhere safe and ventilated. |
+| Short ethernet cable | Wired is more reliable than Wi-Fi for the Pis. |
+
+Shared:
+
+| Item | Notes |
+|---|---|
+| Travel router (e.g. any GL.iNet-style pocket router) | Makes the event Wi-Fi. **Don't plug it into the internet** on the day. |
+| Laptops/Chromebooks with Chrome, Edge or Firefox | One per team of 2-3 scouts. Keyboards matter: the games use arrow keys and space. |
+| Projector or big TV | For the join code, demos and the awards. |
+| USB sticks (optional) | To send scouts home with their games. |
+
+## 1. Prepare each Pi (with internet)
+
+1. Use **Raspberry Pi Imager** to write **Raspberry Pi OS Lite (64-bit)** onto the NVMe drive. A cheap USB-to-NVMe adapter works for this. In the Imager settings, create a user, turn on SSH, and add your home Wi-Fi so the Pi can download things.
+2. Fit the drive, cooler and HAT, then boot. If it doesn't boot from NVMe, boot once from an SD card and run `sudo raspi-config` → *Advanced Options* → *Boot Order* → *NVMe/USB Boot*.
+3. Update everything: `sudo apt update && sudo apt full-upgrade -y && sudo reboot`.
+4. Get the code and install. This takes about 20 minutes: building llama.cpp takes about 10, plus the model download.
+
+   ```bash
+   git clone https://github.com/ijmok/scout-code.git
+   cd scout-code
+   sudo ./setup/install.sh --role basecamp     # on the FIRST Pi
+   ```
+
+   The end of the output shows the **leader PIN** and a **key**. On the **second** Pi:
+
+   ```bash
+   sudo ./setup/install.sh --role worker --key <KEY FROM BASECAMP>
+   ```
+
+5. Reboot both Pis, so their new names (`scout` and `scout-worker`) are picked up.
+
+## 2. Choose the model
+
+`download-models.sh` fetches the **3B** model by default. To compare models, download the others and run the benchmark on each one:
+
+```bash
+./setup/download-models.sh all
+sudo ln -sf /opt/scout/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf /opt/scout/models/current.gguf
+sudo systemctl restart scout-llm
+/opt/scout/venv/bin/python setup/benchmark.py
+```
+
+The benchmark sends 10 typical scout requests and reports the seconds each one took and whether the edits applied. Aim for **under ~90 s per request** and **7/10 or more applied**.
+
+| Model | Expect | Use when |
+|---|---|---|
+| 1.5B | Fastest, more mistakes | Big group, short session |
+| **3B (default)** | Good balance | Most events |
+| 4B (Qwen3) | Slower, often follows instructions better | If 3B keeps failing to apply edits |
+| 7B | Best code, roughly half the speed of 3B | Small, patient group |
+
+Use the **same model on both Pis**.
+
+> These model files are hosted on Hugging Face. If a download fails, the script stops with a clear message. Search Hugging Face for the model name with "GGUF" and update the URL in `setup/download-models.sh`.
+
+## 3. Network for the day
+
+1. Connect both Pis to the travel router with ethernet, and leave the router's internet port empty.
+2. In the router's admin page, give each Pi a **fixed address** (DHCP reservation), for example:
+   - `scout` → 192.168.8.10
+   - `scout-worker` → 192.168.8.11
+3. If the worker isn't reachable as `scout-worker.local`, edit `/opt/scout/data/config.json` on basecamp to use its IP, then run `sudo systemctl restart scout-portal`.
+4. On a laptop on the event Wi-Fi, open `http://scout.local`. If that doesn't load (some Chromebooks and older Windows can't see `.local` names), use `http://192.168.8.10`. Write that address on the board.
+
+## 4. Offline dress rehearsal (do this!)
+
+With the internet unplugged:
+
+1. Open `/leader`. Both workers should show a green dot and a temperature.
+2. With 3 laptops, create teams, make 3 changes each, publish, then rate each other's games.
+3. Watch the dashboard. Temperatures should stay below about 80 °C. If one shows ⚠️ *throttled*, improve the cooling or the power supply.
+4. Optionally load-test from a laptop: `python setup/load_test.py --url http://scout.local --leader-pin <PIN> --teams 6`
+5. Reset for the real event. On basecamp:
+
+   ```bash
+   sudo systemctl stop scout-portal
+   mv /opt/scout/data/scout.db /opt/scout/data/rehearsal.db
+   sudo systemctl start scout-portal
+   ```
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| Red dot on a worker | `sudo systemctl status scout-llm` on that Pi. Check the model exists: `ls -l /opt/scout/models/current.gguf` |
+| Everything is slow | Check temperatures on the dashboard. One Pi down means half speed. Try the 1.5B model. |
+| A team is stuck "Working…" | Dashboard → Queue → **Stop**. They can ask again. |
+| A team forgot their PIN | Dashboard → Teams shows every PIN. **New PIN** issues a new one. |
+| Laptops can't open scout.local | Use the IP address instead. |
+| Need to pause everyone | **⏸️ Pause AI** on the dashboard. Queued requests wait until you resume. |
+| Logs | `journalctl -u scout-portal -f` and `journalctl -u scout-llm -f` |

@@ -30,6 +30,16 @@ class WorkerConfig:
     name: str
     llm: str
     stats: str | None = None
+    api_key: str | None = None
+    api_key_file: str | None = None
+
+    def key(self) -> str | None:
+        """The llama-server --api-key, given directly or in a file."""
+        if self.api_key:
+            return self.api_key
+        if self.api_key_file and Path(self.api_key_file).exists():
+            return Path(self.api_key_file).read_text().strip() or None
+        return None
 
 
 @dataclass

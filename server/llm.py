@@ -20,9 +20,10 @@ class LLMError(Exception):
 
 
 class LlamaServer:
-    def __init__(self, base_url: str, timeout: float = 600.0):
+    def __init__(self, base_url: str, timeout: float = 600.0, api_key: str | None = None):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
     async def stream_chat(self, messages: list[dict], max_tokens: int, temperature: float) -> AsyncIterator[str]:
         body = {
@@ -36,7 +37,7 @@ class LlamaServer:
         }
         timeout = httpx.Timeout(self.timeout, connect=5.0)
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=timeout, headers=self.headers) as client:
                 async with client.stream("POST", f"{self.base_url}/v1/chat/completions", json=body) as resp:
                     if resp.status_code != 200:
                         raise LLMError(f"AI server said {resp.status_code}: {(await resp.aread())[:200]!r}")
