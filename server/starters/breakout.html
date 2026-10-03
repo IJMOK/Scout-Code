@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Brick Breaker</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { width: 100vw; max-width: 160vh; height: auto; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<script>
+// ===== GAME SETTINGS: try changing these! =====
+const CONFIG = {
+  title: "Brick Breaker",
+  background: "#1a1a2e",
+  paddleColour: "#e0e0e0",
+  ballColour: "#ffd400",
+  brickColours: ["#ff595e", "#ff924c", "#ffca3a", "#8ac926", "#1982c4"], // one per row
+  paddleWidth: 110,
+  paddleSpeed: 9,
+  ballSpeed: 5,
+  rows: 5,
+  columns: 10,
+  lives: 3,
+  sound: true,
+};
+
+// ===== Setup =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const keys = {};
+window.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
+  if (e.key === " " && state !== "playing") startGame();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+let audio = null;
+function beep(freq = 440, time = 0.1) {
+  if (!CONFIG.sound) return;
+  try {
+    audio = audio || new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.frequency.value = freq;
+    gain.gain.value = 0.08;
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(); osc.stop(audio.currentTime + time);
+  } catch (e) {}
+}
+
+function drawText(text, x, y, size, colour = "#fff") {
+  ctx.fillStyle = colour;
+  ctx.font = "bold " + size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+// ===== Game state =====
+let state = "start"; // "start", "playing", "gameover" or "win"
+let paddle, ball, bricks, score, lives;
+
+function startGame() {
+  paddle = { x: W / 2 - CONFIG.paddleWidth / 2, y: H - 30, w: CONFIG.paddleWidth, h: 12 };
+  score = 0;
+  lives = CONFIG.lives;
+  makeBricks();
+  resetBall();
+  state = "playing";
+}
+
+function makeBricks() {
+  bricks = [];
+  const gap = 6, top = 50;
+  const bw = (W - gap * (CONFIG.columns + 1)) / CONFIG.columns, bh = 22;
+  for (let r = 0; r < CONFIG.rows; r++) {
+    for (let c = 0; c < CONFIG.columns; c++) {
+      bricks.push({
+        x: gap + c * (bw + gap), y: top + r * (bh + gap), w: bw, h: bh,
+        colour: CONFIG.brickColours[r % CONFIG.brickColours.length],
+      });
+    }
+  }
+}
+
+function resetBall() {
+  ball = { x: W / 2, y: H - 60, vx: CONFIG.ballSpeed * (Math.random() < 0.5 ? -0.7 : 0.7), vy: -CONFIG.ballSpeed, r: 8 };
+}
+
+function update() {
+  if (state !== "playing") return;
+
+  if (keys["ArrowLeft"]) paddle.x -= CONFIG.paddleSpeed;
+  if (keys["ArrowRight"]) paddle.x += CONFIG.paddleSpeed;
+  paddle.x = Math.max(0, Math.min(W - paddle.w, paddle.x));
+
+  ball.x += ball.vx;
+  ball.y += ball.vy;
+
+  // Bounce off the walls
+  if (ball.x < ball.r || ball.x > W - ball.r) { ball.vx *= -1; beep(300, 0.03); }
+  if (ball.y < ball.r) { ball.vy = Math.abs(ball.vy); beep(300, 0.03); }
+
+  // Bounce off the paddle (where it hits changes the angle)
+  if (ball.vy > 0 && ball.y + ball.r > paddle.y && ball.y < paddle.y + paddle.h &&
+      ball.x > paddle.x && ball.x < paddle.x + paddle.w) {
+    const hit = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2); // -1 to 1
+    ball.vx = hit * CONFIG.ballSpeed;
+    ball.vy = -Math.abs(ball.vy);
+    beep(500, 0.05);
+  }
+
+  // Smash bricks
+  for (const b of bricks) {
+    if (!b.broken && ball.x > b.x && ball.x < b.x + b.w && ball.y - ball.r < b.y + b.h && ball.y + ball.r > b.y) {
+      b.broken = true;
+      ball.vy *= -1;
+      score += 10;
+      beep(800, 0.05);
+      break;
+    }
+  }
+  if (bricks.every(b => b.broken)) state = "win";
+
+  // Missed the ball
+  if (ball.y > H + 20) {
+    lives--;
+    beep(110, 0.3);
+    if (lives <= 0) state = "gameover";
+    else resetBall();
+  }
+}
+
+function draw() {
+  ctx.fillStyle = CONFIG.background;
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === "start") {
+    drawText(CONFIG.title, W / 2, H / 2 - 40, 56);
+    drawText("Arrow keys to move the paddle. Smash every brick!", W / 2, H / 2 + 20, 22);
+    drawText("Press SPACE to start", W / 2, H / 2 + 60, 24, "#ffd400");
+    return;
+  }
+
+  for (const b of bricks) {
+    if (b.broken) continue;
+    ctx.fillStyle = b.colour;
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+  }
+  ctx.fillStyle = CONFIG.paddleColour;
+  ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+  ctx.fillStyle = CONFIG.ballColour;
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+  ctx.fill();
+
+  drawText("Score: " + score, 80, 22, 20);
+  drawText("❤️".repeat(Math.max(0, lives)), W - 70, 22, 20);
+
+  if (state === "gameover") {
+    drawText("GAME OVER", W / 2, H / 2 + 60, 60, "#ff4d4d");
+    drawText("Press SPACE to play again", W / 2, H / 2 + 120, 24);
+  }
+  if (state === "win") {
+    drawText("YOU WIN! 🎉", W / 2, H / 2 + 60, 60, "#5dff8a");
+    drawText("Score: " + score + "  -  press SPACE to play again", W / 2, H / 2 + 120, 24);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

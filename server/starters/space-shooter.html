@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Space Shooter</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { width: 100vw; max-width: 160vh; height: auto; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<script>
+// ===== GAME SETTINGS: try changing these! =====
+const CONFIG = {
+  title: "Space Shooter",
+  player: "🚀",          // the emoji you fly
+  enemy: "👾",           // the emoji you shoot
+  bullet: "🔸",
+  background: "#0b0b2b", // colour of space
+  starColour: "#ffffff",
+  playerSpeed: 6,        // how fast you move
+  bulletSpeed: 10,
+  enemySpeed: 1.5,       // how fast enemies fall
+  enemyEvery: 50,        // a new enemy every this many frames (smaller = more enemies)
+  lives: 3,
+  sound: true,
+};
+
+// ===== Setup =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const keys = {};
+window.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
+  if (e.key === " " && state !== "playing") startGame();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+let audio = null;
+function beep(freq = 440, time = 0.1) {
+  if (!CONFIG.sound) return;
+  try {
+    audio = audio || new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.frequency.value = freq;
+    gain.gain.value = 0.08;
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(); osc.stop(audio.currentTime + time);
+  } catch (e) {}
+}
+
+function drawEmoji(emoji, x, y, size) {
+  ctx.font = size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, x, y);
+}
+
+function drawText(text, x, y, size, colour = "#fff") {
+  ctx.fillStyle = colour;
+  ctx.font = "bold " + size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+// Things touching? (circle check)
+function touching(a, b, distance) {
+  return Math.hypot(a.x - b.x, a.y - b.y) < distance;
+}
+
+// ===== Game state =====
+let state = "start"; // "start", "playing" or "gameover"
+let player, bullets, enemies, stars, score, lives, frame, cooldown;
+
+stars = [];
+for (let i = 0; i < 80; i++) stars.push({ x: Math.random() * W, y: Math.random() * H, speed: 0.5 + Math.random() * 2 });
+
+function startGame() {
+  player = { x: W / 2, y: H - 50 };
+  bullets = [];
+  enemies = [];
+  score = 0;
+  lives = CONFIG.lives;
+  frame = 0;
+  cooldown = 0;
+  state = "playing";
+}
+
+function update() {
+  // Stars always drift down
+  for (const s of stars) {
+    s.y += s.speed;
+    if (s.y > H) { s.y = 0; s.x = Math.random() * W; }
+  }
+  if (state !== "playing") return;
+  frame++;
+
+  // Move the player
+  if (keys["ArrowLeft"]) player.x -= CONFIG.playerSpeed;
+  if (keys["ArrowRight"]) player.x += CONFIG.playerSpeed;
+  player.x = Math.max(20, Math.min(W - 20, player.x));
+
+  // Shoot!
+  if (cooldown > 0) cooldown--;
+  if (keys[" "] && cooldown === 0) {
+    bullets.push({ x: player.x, y: player.y - 25 });
+    cooldown = 12;
+    beep(880, 0.05);
+  }
+  for (const b of bullets) b.y -= CONFIG.bulletSpeed;
+  bullets = bullets.filter(b => b.y > -20);
+
+  // New enemies appear at the top
+  if (frame % CONFIG.enemyEvery === 0) {
+    enemies.push({ x: 30 + Math.random() * (W - 60), y: -20, wobble: Math.random() * 6 });
+  }
+  for (const e of enemies) {
+    e.y += CONFIG.enemySpeed;
+    e.x += Math.sin((frame + e.wobble * 20) / 20);
+  }
+
+  // Bullets hit enemies
+  for (const e of enemies) {
+    for (const b of bullets) {
+      if (!e.dead && !b.dead && touching(e, b, 25)) {
+        e.dead = b.dead = true;
+        score += 10;
+        beep(220, 0.1);
+      }
+    }
+  }
+
+  // Enemies that reach the bottom or hit you cost a life
+  for (const e of enemies) {
+    if (!e.dead && (e.y > H + 20 || touching(e, player, 35))) {
+      e.dead = true;
+      lives--;
+      beep(110, 0.3);
+    }
+  }
+  enemies = enemies.filter(e => !e.dead);
+  bullets = bullets.filter(b => !b.dead);
+
+  if (lives <= 0) state = "gameover";
+}
+
+function draw() {
+  ctx.fillStyle = CONFIG.background;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = CONFIG.starColour;
+  for (const s of stars) ctx.fillRect(s.x, s.y, 2, 2);
+
+  if (state === "start") {
+    drawText(CONFIG.title, W / 2, H / 2 - 40, 56);
+    drawText("Arrows to move, SPACE to shoot", W / 2, H / 2 + 20, 24);
+    drawText("Press SPACE to start", W / 2, H / 2 + 60, 24, "#ffd400");
+    return;
+  }
+
+  drawEmoji(CONFIG.player, player.x, player.y, 40);
+  for (const b of bullets) drawEmoji(CONFIG.bullet, b.x, b.y, 18);
+  for (const e of enemies) drawEmoji(CONFIG.enemy, e.x, e.y, 36);
+
+  ctx.textAlign = "left";
+  drawText("Score: " + score, 80, 24, 22);
+  drawText("❤️".repeat(Math.max(0, lives)), W - 80, 24, 22);
+
+  if (state === "gameover") {
+    drawText("GAME OVER", W / 2, H / 2 - 20, 60, "#ff4d4d");
+    drawText("Score: " + score + "  -  press SPACE to play again", W / 2, H / 2 + 40, 24);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

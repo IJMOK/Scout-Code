@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fruit Catcher</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { width: 100vw; max-width: 160vh; height: auto; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<script>
+// ===== GAME SETTINGS: try changing these! =====
+const CONFIG = {
+  title: "Fruit Catcher",
+  basket: "🧺",
+  goodThings: ["🍎", "🍌", "🍇", "🍓", "🍉"], // catch these
+  badThings: ["💣"],                          // avoid these
+  background: "#fff4d6",
+  textColour: "#5a3300",
+  basketSpeed: 8,
+  fallSpeed: 3,          // starting fall speed
+  speedUp: 0.002,        // how quickly things get faster
+  dropEvery: 40,         // new thing every this many frames
+  badChance: 0.25,       // 0.25 = one in four drops is bad
+  lives: 3,
+  sound: true,
+};
+
+// ===== Setup =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const keys = {};
+window.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
+  if (e.key === " " && state !== "playing") startGame();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+let audio = null;
+function beep(freq = 440, time = 0.1) {
+  if (!CONFIG.sound) return;
+  try {
+    audio = audio || new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.frequency.value = freq;
+    gain.gain.value = 0.08;
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(); osc.stop(audio.currentTime + time);
+  } catch (e) {}
+}
+
+function drawEmoji(emoji, x, y, size) {
+  ctx.font = size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, x, y);
+}
+
+function drawText(text, x, y, size, colour = CONFIG.textColour) {
+  ctx.fillStyle = colour;
+  ctx.font = "bold " + size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+function pick(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+// ===== Game state =====
+let state = "start"; // "start", "playing" or "gameover"
+let basket, things, score, lives, frame, speed;
+
+function startGame() {
+  basket = { x: W / 2, y: H - 40 };
+  things = [];
+  score = 0;
+  lives = CONFIG.lives;
+  frame = 0;
+  speed = CONFIG.fallSpeed;
+  state = "playing";
+}
+
+function update() {
+  if (state !== "playing") return;
+  frame++;
+  speed += CONFIG.speedUp;
+
+  if (keys["ArrowLeft"]) basket.x -= CONFIG.basketSpeed;
+  if (keys["ArrowRight"]) basket.x += CONFIG.basketSpeed;
+  basket.x = Math.max(30, Math.min(W - 30, basket.x));
+
+  // Drop something new
+  if (frame % CONFIG.dropEvery === 0) {
+    const bad = Math.random() < CONFIG.badChance;
+    things.push({
+      x: 30 + Math.random() * (W - 60),
+      y: -20,
+      bad,
+      emoji: bad ? pick(CONFIG.badThings) : pick(CONFIG.goodThings),
+    });
+  }
+
+  for (const t of things) {
+    t.y += speed;
+    // Caught in the basket?
+    if (Math.abs(t.x - basket.x) < 40 && Math.abs(t.y - basket.y) < 25) {
+      t.gone = true;
+      if (t.bad) { lives--; beep(110, 0.3); }
+      else { score++; beep(880, 0.06); }
+    }
+    // Dropped a good one on the floor?
+    if (t.y > H + 20) {
+      t.gone = true;
+      if (!t.bad) { lives--; beep(200, 0.2); }
+    }
+  }
+  things = things.filter(t => !t.gone);
+
+  if (lives <= 0) state = "gameover";
+}
+
+function draw() {
+  ctx.fillStyle = CONFIG.background;
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === "start") {
+    drawText(CONFIG.title, W / 2, H / 2 - 40, 56);
+    drawText("Catch the fruit, dodge the bombs! Arrow keys to move.", W / 2, H / 2 + 20, 22);
+    drawText("Press SPACE to start", W / 2, H / 2 + 60, 24, "#d35400");
+    return;
+  }
+
+  for (const t of things) drawEmoji(t.emoji, t.x, t.y, 36);
+  drawEmoji(CONFIG.basket, basket.x, basket.y, 56);
+
+  drawText("Score: " + score, 80, 24, 22);
+  drawText("❤️".repeat(Math.max(0, lives)), W - 80, 24, 22);
+
+  if (state === "gameover") {
+    drawText("GAME OVER", W / 2, H / 2 - 20, 60, "#c0392b");
+    drawText("Score: " + score + "  -  press SPACE to play again", W / 2, H / 2 + 40, 24);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

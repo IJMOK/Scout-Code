@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Maze Escape</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { width: 100vw; max-width: 160vh; height: auto; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<script>
+// ===== GAME SETTINGS: try changing these! =====
+const CONFIG = {
+  title: "Maze Escape",
+  player: "🐭",
+  goal: "🧀",
+  ghost: "👻",
+  wallColour: "#4b3cc9",
+  floorColour: "#101030",
+  ghostSpeed: 6,         // ghost moves every this many frames (smaller = faster)
+  timeLimit: 60,         // seconds for each maze
+  sound: true,
+};
+
+// Draw your own mazes! # = wall, . = floor, P = player start, G = goal, X = ghost
+const MAZES = [
+  [
+    "################",
+    "#P....#........#",
+    "#.##..#.#####..#",
+    "#.#...#.....#..#",
+    "#.#.#####.#.#.##",
+    "#.#.......#.#..#",
+    "#.#######.#.##.#",
+    "#.....X...#....#",
+    "#####.#####.##.#",
+    "#.........#..#G#",
+    "################",
+  ],
+  [
+    "################",
+    "#P#.....#......#",
+    "#.#.###.#.####.#",
+    "#...#...#....#.#",
+    "###.#.######.#.#",
+    "#...#......X.#.#",
+    "#.#######.####.#",
+    "#.#X......#....#",
+    "#.#.#####.#.##.#",
+    "#...#.......#.G#",
+    "################",
+  ],
+];
+
+// ===== Setup =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const TILE = 45;
+const OFFSET_X = (W - 16 * TILE) / 2, OFFSET_Y = 0;
+
+window.addEventListener("keydown", e => {
+  if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
+  if (e.key === " " && state !== "playing") startGame();
+  if (state !== "playing") return;
+  if (e.key === "ArrowUp") move(0, -1);
+  if (e.key === "ArrowDown") move(0, 1);
+  if (e.key === "ArrowLeft") move(-1, 0);
+  if (e.key === "ArrowRight") move(1, 0);
+});
+
+let audio = null;
+function beep(freq = 440, time = 0.1) {
+  if (!CONFIG.sound) return;
+  try {
+    audio = audio || new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.frequency.value = freq;
+    gain.gain.value = 0.08;
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(); osc.stop(audio.currentTime + time);
+  } catch (e) {}
+}
+
+function drawEmoji(emoji, x, y, size) {
+  ctx.font = size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, x, y);
+}
+
+function drawText(text, x, y, size, colour = "#fff") {
+  ctx.fillStyle = colour;
+  ctx.font = "bold " + size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+// ===== Game state =====
+let state = "start"; // "start", "playing", "gameover" or "win"
+let level, grid, player, goal, ghosts, timeLeft, frame, score;
+
+function startGame() {
+  score = 0;
+  loadMaze(0);
+  state = "playing";
+}
+
+function loadMaze(n) {
+  level = n;
+  grid = MAZES[n].map(row => row.split(""));
+  ghosts = [];
+  grid.forEach((row, y) => row.forEach((ch, x) => {
+    if (ch === "P") player = { x, y };
+    if (ch === "G") goal = { x, y };
+    if (ch === "X") ghosts.push({ x, y });
+  }));
+  timeLeft = CONFIG.timeLimit * 60;
+  frame = 0;
+}
+
+function isWall(x, y) {
+  return !grid[y] || grid[y][x] === undefined || grid[y][x] === "#";
+}
+
+function move(dx, dy) {
+  if (!isWall(player.x + dx, player.y + dy)) {
+    player.x += dx;
+    player.y += dy;
+    beep(500, 0.03);
+  }
+}
+
+function update() {
+  if (state !== "playing") return;
+  frame++;
+  timeLeft--;
+  if (timeLeft <= 0) { state = "gameover"; beep(110, 0.4); return; }
+
+  // Ghosts wander about randomly
+  if (frame % CONFIG.ghostSpeed === 0) {
+    for (const g of ghosts) {
+      const options = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => !isWall(g.x + dx, g.y + dy));
+      if (options.length === 0) continue;
+      const [dx, dy] = options[Math.floor(Math.random() * options.length)];
+      g.x += dx;
+      g.y += dy;
+    }
+  }
+  for (const g of ghosts) {
+    if (g.x === player.x && g.y === player.y) { state = "gameover"; beep(110, 0.4); return; }
+  }
+
+  // Reached the goal?
+  if (player.x === goal.x && player.y === goal.y) {
+    score += Math.ceil(timeLeft / 60);
+    beep(990, 0.2);
+    if (level + 1 < MAZES.length) loadMaze(level + 1);
+    else state = "win";
+  }
+}
+
+function cellCentre(c) {
+  return [OFFSET_X + c.x * TILE + TILE / 2, OFFSET_Y + c.y * TILE + TILE / 2];
+}
+
+function draw() {
+  ctx.fillStyle = CONFIG.floorColour;
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === "start") {
+    drawText(CONFIG.title, W / 2, H / 2 - 40, 56);
+    drawText("Arrow keys to move. Find the " + CONFIG.goal + " and dodge the " + CONFIG.ghost, W / 2, H / 2 + 20, 22);
+    drawText("Press SPACE to start", W / 2, H / 2 + 60, 24, "#ffd400");
+    return;
+  }
+
+  ctx.fillStyle = CONFIG.wallColour;
+  grid.forEach((row, y) => row.forEach((ch, x) => {
+    if (ch === "#") ctx.fillRect(OFFSET_X + x * TILE, OFFSET_Y + y * TILE, TILE, TILE);
+  }));
+  drawEmoji(CONFIG.goal, ...cellCentre(goal), 32);
+  for (const g of ghosts) drawEmoji(CONFIG.ghost, ...cellCentre(g), 32);
+  drawEmoji(CONFIG.player, ...cellCentre(player), 32);
+
+  drawText("⏱ " + Math.ceil(timeLeft / 60), W - 60, H - 15, 20);
+  drawText("Score: " + score, 70, H - 15, 20);
+
+  if (state === "gameover") {
+    drawText("CAUGHT!", W / 2, H / 2 - 20, 60, "#ff4d4d");
+    drawText("Press SPACE to try again", W / 2, H / 2 + 40, 24);
+  }
+  if (state === "win") {
+    drawText("YOU ESCAPED! 🎉", W / 2, H / 2 - 20, 56, "#5dff8a");
+    drawText("Score: " + score + "  -  press SPACE to play again", W / 2, H / 2 + 40, 24);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

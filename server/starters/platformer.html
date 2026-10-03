@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Coin Jumper</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { width: 100vw; max-width: 160vh; height: auto; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<script>
+// ===== GAME SETTINGS: try changing these! =====
+const CONFIG = {
+  title: "Coin Jumper",
+  player: "🐸",
+  coin: "⭐",
+  enemy: "🦔",
+  sky: "#87ceeb",
+  platformColour: "#3b7a2a",
+  gravity: 0.6,          // how hard you fall
+  jumpPower: 13,         // how high you jump
+  runSpeed: 5,
+  enemySpeed: 1.5,
+  lives: 3,
+  sound: true,
+};
+
+// Each level is a list of platforms: [x, y, width]
+const LEVELS = [
+  { platforms: [[0, 470, 800], [120, 380, 160], [360, 300, 140], [560, 220, 160], [200, 180, 120]],
+    coins: [[200, 340], [430, 260], [640, 180], [260, 140], [700, 430]],
+    enemies: [[400, 450], [600, 200]] },
+  { platforms: [[0, 470, 250], [330, 470, 470], [80, 370, 120], [260, 290, 120], [460, 210, 120], [640, 130, 140], [620, 360, 140]],
+    coins: [[140, 330], [320, 250], [520, 170], [710, 90], [690, 320], [740, 430]],
+    enemies: [[500, 450], [680, 340], [300, 270]] },
+];
+
+// ===== Setup =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const keys = {};
+window.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
+  if (e.key === " " && state !== "playing") startGame();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+let audio = null;
+function beep(freq = 440, time = 0.1) {
+  if (!CONFIG.sound) return;
+  try {
+    audio = audio || new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.frequency.value = freq;
+    gain.gain.value = 0.08;
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(); osc.stop(audio.currentTime + time);
+  } catch (e) {}
+}
+
+function drawEmoji(emoji, x, y, size) {
+  ctx.font = size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, x, y);
+}
+
+function drawText(text, x, y, size, colour = "#fff") {
+  ctx.fillStyle = colour;
+  ctx.font = "bold " + size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+// ===== Game state =====
+let state = "start"; // "start", "playing", "gameover" or "win"
+let player, level, platforms, coins, enemies, score, lives;
+
+function startGame() {
+  score = 0;
+  lives = CONFIG.lives;
+  loadLevel(0);
+  state = "playing";
+}
+
+function loadLevel(n) {
+  level = n;
+  const L = LEVELS[n];
+  platforms = L.platforms.map(([x, y, w]) => ({ x, y, w, h: 16 }));
+  coins = L.coins.map(([x, y]) => ({ x, y }));
+  enemies = L.enemies.map(([x, y]) => ({ x, y, dir: 1, startX: x }));
+  resetPlayer();
+}
+
+function resetPlayer() {
+  player = { x: 40, y: 400, vx: 0, vy: 0, onGround: false, size: 34 };
+}
+
+function update() {
+  if (state !== "playing") return;
+
+  // Running left and right
+  player.vx = 0;
+  if (keys["ArrowLeft"]) player.vx = -CONFIG.runSpeed;
+  if (keys["ArrowRight"]) player.vx = CONFIG.runSpeed;
+
+  // Jumping (only when standing on something)
+  if ((keys["ArrowUp"] || keys[" "]) && player.onGround) {
+    player.vy = -CONFIG.jumpPower;
+    beep(660, 0.08);
+  }
+
+  // Gravity pulls you down
+  player.vy += CONFIG.gravity;
+  player.x += player.vx;
+  player.x = Math.max(15, Math.min(W - 15, player.x));
+  const oldFeet = player.y + player.size / 2;
+  player.y += player.vy;
+
+  // Land on platforms when falling
+  player.onGround = false;
+  const feet = player.y + player.size / 2;
+  for (const p of platforms) {
+    const over = player.x > p.x - 10 && player.x < p.x + p.w + 10;
+    if (over && player.vy >= 0 && oldFeet <= p.y && feet >= p.y) {
+      player.y = p.y - player.size / 2;
+      player.vy = 0;
+      player.onGround = true;
+    }
+  }
+
+  // Fell off the bottom?
+  if (player.y > H + 50) loseLife();
+
+  // Collect coins
+  for (const c of coins) {
+    if (!c.taken && Math.hypot(c.x - player.x, c.y - player.y) < 30) {
+      c.taken = true;
+      score += 10;
+      beep(990, 0.1);
+    }
+  }
+  if (coins.every(c => c.taken)) {
+    if (level + 1 < LEVELS.length) loadLevel(level + 1);
+    else state = "win";
+  }
+
+  // Enemies walk back and forth
+  for (const e of enemies) {
+    e.x += e.dir * CONFIG.enemySpeed;
+    if (Math.abs(e.x - e.startX) > 60) e.dir *= -1;
+    if (Math.hypot(e.x - player.x, e.y - player.y) < 30) loseLife();
+  }
+}
+
+function loseLife() {
+  lives--;
+  beep(110, 0.3);
+  if (lives <= 0) state = "gameover";
+  else resetPlayer();
+}
+
+function draw() {
+  ctx.fillStyle = CONFIG.sky;
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === "start") {
+    drawText(CONFIG.title, W / 2, H / 2 - 40, 56, "#1b3a6b");
+    drawText("Arrows to move, UP or SPACE to jump. Get all the stars!", W / 2, H / 2 + 20, 22, "#1b3a6b");
+    drawText("Press SPACE to start", W / 2, H / 2 + 60, 24, "#b33");
+    return;
+  }
+
+  ctx.fillStyle = CONFIG.platformColour;
+  for (const p of platforms) ctx.fillRect(p.x, p.y, p.w, p.h);
+  for (const c of coins) if (!c.taken) drawEmoji(CONFIG.coin, c.x, c.y, 26);
+  for (const e of enemies) drawEmoji(CONFIG.enemy, e.x, e.y, 30);
+  drawEmoji(CONFIG.player, player.x, player.y, player.size);
+
+  drawText("Score: " + score + "   Level " + (level + 1), 140, 24, 22, "#1b3a6b");
+  drawText("❤️".repeat(Math.max(0, lives)), W - 80, 24, 22);
+
+  if (state === "gameover") {
+    drawText("GAME OVER", W / 2, H / 2 - 20, 60, "#c0392b");
+    drawText("Press SPACE to try again", W / 2, H / 2 + 40, 24, "#1b3a6b");
+  }
+  if (state === "win") {
+    drawText("YOU WIN! 🎉", W / 2, H / 2 - 20, 60, "#27ae60");
+    drawText("Score: " + score + "  -  press SPACE to play again", W / 2, H / 2 + 40, 24, "#1b3a6b");
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

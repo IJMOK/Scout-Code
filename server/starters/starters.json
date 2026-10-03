@@ -1,0 +1,18 @@
+[
+  {"id": "space-shooter", "title": "Space Shooter", "emoji": "🚀", "blurb": "Blast the aliens before they reach you!",
+   "ideas": ["Make the player a dragon 🐉 and the enemies knights 🤺", "Add a boss that appears every 100 points", "Give me triple shot when I press X", "Make enemies speed up as my score goes up"]},
+  {"id": "platformer", "title": "Coin Jumper", "emoji": "🐸", "blurb": "Jump between platforms and collect all the stars.",
+   "ideas": ["Add a third level with lots of tiny platforms", "Let me double jump", "Add a spring 🌀 that bounces me really high", "Make it night time with a dark sky and glowing stars"]},
+  {"id": "snake", "title": "Snake", "emoji": "🐍", "blurb": "Eat the food and grow longer, but don't bite yourself!",
+   "ideas": ["Add golden apples 🍏 worth 5 points", "Make the snake rainbow coloured", "Add walls in the middle that I must avoid", "Turn on wrap-around through the walls"]},
+  {"id": "maze", "title": "Maze Escape", "emoji": "🐭", "blurb": "Find the cheese and dodge the ghosts.",
+   "ideas": ["Add a third, harder maze", "Add keys 🔑 I must collect before the cheese counts", "Make the ghosts chase me", "Change it to a 🐧 looking for a 🐟 in an ice maze"]},
+  {"id": "catch", "title": "Fruit Catcher", "emoji": "🧺", "blurb": "Catch falling fruit, avoid the bombs.",
+   "ideas": ["Add a rare 🌟 that gives an extra life", "Make it rain sweets 🍬🍭🍫 instead of fruit", "Show a combo counter for catches in a row", "Add a shield power-up 🛡️"]},
+  {"id": "flappy", "title": "Flappy Chick", "emoji": "🐤", "blurb": "Flap through the gaps in the pipes.",
+   "ideas": ["Make the gap get smaller as I score", "Add clouds drifting in the background", "Add coins 🪙 to collect between pipes", "Make it an underwater game with a 🐠"]},
+  {"id": "breakout", "title": "Brick Breaker", "emoji": "🧱", "blurb": "Bounce the ball and smash every brick.",
+   "ideas": ["Some bricks need two hits", "Add a power-up that makes the paddle wider", "Make the ball speed up each time it hits the paddle", "Add a second level with a smiley-face brick pattern"]},
+  {"id": "dodge", "title": "Meteor Dodge", "emoji": "☄️", "blurb": "Dodge meteors from every side and grab the gems.",
+   "ideas": ["Add a shield power-up 🛡️", "Make big meteors that split into small ones", "Add a dash when I press SPACE", "Show a high score that beats my best"]}
+]

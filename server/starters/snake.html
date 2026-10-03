@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Snake</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { width: 100vw; max-width: 160vh; height: auto; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<script>
+// ===== GAME SETTINGS: try changing these! =====
+const CONFIG = {
+  title: "Snake",
+  food: "🍎",
+  background: "#1d3b1d",
+  snakeColour: "#7cfc00",
+  headColour: "#c6ff7a",
+  gridSize: 25,          // size of each square
+  startSpeed: 8,         // moves per second
+  speedUpEvery: 5,       // get faster after eating this many
+  wrapAround: false,     // true = go through walls and appear on the other side
+  sound: true,
+};
+
+// ===== Setup =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const COLS = Math.floor(W / CONFIG.gridSize), ROWS = Math.floor(H / CONFIG.gridSize);
+
+window.addEventListener("keydown", e => {
+  if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
+  if (e.key === " " && state !== "playing") startGame();
+  // Turn, but never straight back into yourself
+  if (e.key === "ArrowUp" && dir.y === 0) nextDir = { x: 0, y: -1 };
+  if (e.key === "ArrowDown" && dir.y === 0) nextDir = { x: 0, y: 1 };
+  if (e.key === "ArrowLeft" && dir.x === 0) nextDir = { x: -1, y: 0 };
+  if (e.key === "ArrowRight" && dir.x === 0) nextDir = { x: 1, y: 0 };
+});
+
+let audio = null;
+function beep(freq = 440, time = 0.1) {
+  if (!CONFIG.sound) return;
+  try {
+    audio = audio || new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.frequency.value = freq;
+    gain.gain.value = 0.08;
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(); osc.stop(audio.currentTime + time);
+  } catch (e) {}
+}
+
+function drawEmoji(emoji, x, y, size) {
+  ctx.font = size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, x, y);
+}
+
+function drawText(text, x, y, size, colour = "#fff") {
+  ctx.fillStyle = colour;
+  ctx.font = "bold " + size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+// ===== Game state =====
+let state = "start"; // "start", "playing" or "gameover"
+let snake = [], dir = { x: 1, y: 0 }, nextDir = { x: 1, y: 0 }, food, score, speed, lastMove = 0;
+
+function startGame() {
+  snake = [{ x: 5, y: 10 }, { x: 4, y: 10 }, { x: 3, y: 10 }];
+  dir = { x: 1, y: 0 };
+  nextDir = dir;
+  score = 0;
+  speed = CONFIG.startSpeed;
+  placeFood();
+  state = "playing";
+}
+
+function placeFood() {
+  do {
+    food = { x: Math.floor(Math.random() * COLS), y: Math.floor(Math.random() * ROWS) };
+  } while (snake.some(s => s.x === food.x && s.y === food.y));
+}
+
+function step() {
+  dir = nextDir;
+  const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+  if (CONFIG.wrapAround) {
+    head.x = (head.x + COLS) % COLS;
+    head.y = (head.y + ROWS) % ROWS;
+  } else if (head.x < 0 || head.y < 0 || head.x >= COLS || head.y >= ROWS) {
+    return gameOver();
+  }
+  if (snake.some(s => s.x === head.x && s.y === head.y)) return gameOver();
+
+  snake.unshift(head);
+  if (head.x === food.x && head.y === food.y) {
+    score++;
+    beep(880, 0.08);
+    if (score % CONFIG.speedUpEvery === 0) speed++;
+    placeFood();
+  } else {
+    snake.pop(); // not eating, so the tail moves too
+  }
+}
+
+function gameOver() {
+  state = "gameover";
+  beep(110, 0.4);
+}
+
+function update(time) {
+  if (state !== "playing") return;
+  if (time - lastMove > 1000 / speed) {
+    lastMove = time;
+    step();
+  }
+}
+
+function draw() {
+  ctx.fillStyle = CONFIG.background;
+  ctx.fillRect(0, 0, W, H);
+  const g = CONFIG.gridSize;
+
+  if (state === "start") {
+    drawText(CONFIG.title, W / 2, H / 2 - 40, 60);
+    drawText("Use the arrow keys. Eat the food, don't eat yourself!", W / 2, H / 2 + 20, 22);
+    drawText("Press SPACE to start", W / 2, H / 2 + 60, 24, "#ffd400");
+    return;
+  }
+
+  drawEmoji(CONFIG.food, food.x * g + g / 2, food.y * g + g / 2, g);
+  snake.forEach((s, i) => {
+    ctx.fillStyle = i === 0 ? CONFIG.headColour : CONFIG.snakeColour;
+    ctx.fillRect(s.x * g + 1, s.y * g + 1, g - 2, g - 2);
+  });
+
+  drawText("Score: " + score, 70, 20, 20);
+
+  if (state === "gameover") {
+    drawText("GAME OVER", W / 2, H / 2 - 20, 60, "#ff4d4d");
+    drawText("Score: " + score + "  -  press SPACE to play again", W / 2, H / 2 + 40, 24);
+  }
+}
+
+function loop(time) {
+  update(time || 0);
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

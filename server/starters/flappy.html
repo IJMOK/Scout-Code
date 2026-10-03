@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Flappy Chick</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { width: 100vw; max-width: 160vh; height: auto; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<script>
+// ===== GAME SETTINGS: try changing these! =====
+const CONFIG = {
+  title: "Flappy Chick",
+  bird: "🐤",
+  sky: "#70c5ce",
+  pipeColour: "#5cb85c",
+  groundColour: "#ded895",
+  gravity: 0.45,
+  flapPower: 8,          // how far up each flap goes
+  pipeSpeed: 3,
+  gapSize: 160,          // space between top and bottom pipe
+  pipeEvery: 100,        // new pipe every this many frames
+  sound: true,
+};
+
+// ===== Setup =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const GROUND = H - 40;
+const PIPE_WIDTH = 70;
+
+window.addEventListener("keydown", e => {
+  if ([" ", "ArrowUp"].includes(e.key)) {
+    e.preventDefault();
+    if (state === "playing") flap();
+    else startGame();
+  }
+});
+
+let audio = null;
+function beep(freq = 440, time = 0.1) {
+  if (!CONFIG.sound) return;
+  try {
+    audio = audio || new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.frequency.value = freq;
+    gain.gain.value = 0.08;
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(); osc.stop(audio.currentTime + time);
+  } catch (e) {}
+}
+
+function drawEmoji(emoji, x, y, size) {
+  ctx.font = size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, x, y);
+}
+
+function drawText(text, x, y, size, colour = "#fff") {
+  ctx.fillStyle = colour;
+  ctx.font = "bold " + size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+// ===== Game state =====
+let state = "start"; // "start", "playing" or "gameover"
+let bird, pipes, score, frame, best = 0;
+
+function startGame() {
+  bird = { x: 180, y: H / 2, vy: 0 };
+  pipes = [];
+  score = 0;
+  frame = 0;
+  state = "playing";
+  flap();
+}
+
+function flap() {
+  bird.vy = -CONFIG.flapPower;
+  beep(700, 0.05);
+}
+
+function update() {
+  if (state !== "playing") return;
+  frame++;
+
+  bird.vy += CONFIG.gravity;
+  bird.y += bird.vy;
+
+  // Add a new pair of pipes with a gap somewhere random
+  if (frame % CONFIG.pipeEvery === 0) {
+    const gapY = 80 + Math.random() * (GROUND - 160 - CONFIG.gapSize);
+    pipes.push({ x: W, gapY, scored: false });
+  }
+  for (const p of pipes) {
+    p.x -= CONFIG.pipeSpeed;
+    // Flew past a pipe? Score!
+    if (!p.scored && p.x + PIPE_WIDTH < bird.x) {
+      p.scored = true;
+      score++;
+      beep(990, 0.08);
+    }
+    // Hit a pipe?
+    const insideX = bird.x + 15 > p.x && bird.x - 15 < p.x + PIPE_WIDTH;
+    const insideGap = bird.y - 15 > p.gapY && bird.y + 15 < p.gapY + CONFIG.gapSize;
+    if (insideX && !insideGap) crash();
+  }
+  pipes = pipes.filter(p => p.x > -PIPE_WIDTH);
+
+  if (bird.y > GROUND - 15 || bird.y < 0) crash();
+}
+
+function crash() {
+  state = "gameover";
+  best = Math.max(best, score);
+  beep(110, 0.4);
+}
+
+function draw() {
+  ctx.fillStyle = CONFIG.sky;
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = CONFIG.groundColour;
+  ctx.fillRect(0, GROUND, W, H - GROUND);
+
+  if (state === "start") {
+    drawText(CONFIG.title, W / 2, H / 2 - 40, 56);
+    drawText("Press SPACE to flap through the gaps", W / 2, H / 2 + 20, 24);
+    drawText("Press SPACE to start", W / 2, H / 2 + 60, 24, "#ffd400");
+    return;
+  }
+
+  ctx.fillStyle = CONFIG.pipeColour;
+  for (const p of pipes) {
+    ctx.fillRect(p.x, 0, PIPE_WIDTH, p.gapY);
+    ctx.fillRect(p.x, p.gapY + CONFIG.gapSize, PIPE_WIDTH, GROUND - p.gapY - CONFIG.gapSize);
+  }
+  drawEmoji(CONFIG.bird, bird.x, bird.y, 40);
+
+  drawText(String(score), W / 2, 50, 48);
+
+  if (state === "gameover") {
+    drawText("GAME OVER", W / 2, H / 2 - 20, 60, "#ff4d4d");
+    drawText("Score: " + score + "   Best: " + best + "  -  SPACE to play again", W / 2, H / 2 + 40, 24);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>

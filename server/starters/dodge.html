@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Meteor Dodge</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { width: 100vw; max-width: 160vh; height: auto; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="500"></canvas>
+<script>
+// ===== GAME SETTINGS: try changing these! =====
+const CONFIG = {
+  title: "Meteor Dodge",
+  player: "😎",
+  meteor: "☄️",
+  gem: "💎",
+  background: "#2b1b3d",
+  playerSpeed: 5,
+  meteorSpeed: 3,
+  meteorEvery: 30,       // new meteor every this many frames
+  gemEvery: 150,         // new gem every this many frames
+  gemPoints: 5,
+  lives: 3,
+  sound: true,
+};
+
+// ===== Setup =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const W = canvas.width, H = canvas.height;
+const keys = {};
+window.addEventListener("keydown", e => {
+  keys[e.key] = true;
+  if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) e.preventDefault();
+  if (e.key === " " && state !== "playing") startGame();
+});
+window.addEventListener("keyup", e => { keys[e.key] = false; });
+
+let audio = null;
+function beep(freq = 440, time = 0.1) {
+  if (!CONFIG.sound) return;
+  try {
+    audio = audio || new AudioContext();
+    const osc = audio.createOscillator(), gain = audio.createGain();
+    osc.frequency.value = freq;
+    gain.gain.value = 0.08;
+    osc.connect(gain); gain.connect(audio.destination);
+    osc.start(); osc.stop(audio.currentTime + time);
+  } catch (e) {}
+}
+
+function drawEmoji(emoji, x, y, size) {
+  ctx.font = size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(emoji, x, y);
+}
+
+function drawText(text, x, y, size, colour = "#fff") {
+  ctx.fillStyle = colour;
+  ctx.font = "bold " + size + "px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x, y);
+}
+
+function touching(a, b, distance) {
+  return Math.hypot(a.x - b.x, a.y - b.y) < distance;
+}
+
+// ===== Game state =====
+let state = "start"; // "start", "playing" or "gameover"
+let player, meteors, gems, score, lives, frame, safeTime;
+
+function startGame() {
+  player = { x: W / 2, y: H / 2 };
+  meteors = [];
+  gems = [];
+  score = 0;
+  lives = CONFIG.lives;
+  frame = 0;
+  safeTime = 60;
+  state = "playing";
+}
+
+// Meteors fly in from a random edge towards the middle-ish
+function spawnMeteor() {
+  const side = Math.floor(Math.random() * 4);
+  const m = { x: 0, y: 0 };
+  if (side === 0) { m.x = Math.random() * W; m.y = -20; }
+  if (side === 1) { m.x = W + 20; m.y = Math.random() * H; }
+  if (side === 2) { m.x = Math.random() * W; m.y = H + 20; }
+  if (side === 3) { m.x = -20; m.y = Math.random() * H; }
+  const targetX = W / 4 + Math.random() * W / 2, targetY = H / 4 + Math.random() * H / 2;
+  const angle = Math.atan2(targetY - m.y, targetX - m.x);
+  const speed = CONFIG.meteorSpeed * (0.7 + Math.random() * 0.6) + frame / 2000;
+  m.vx = Math.cos(angle) * speed;
+  m.vy = Math.sin(angle) * speed;
+  meteors.push(m);
+}
+
+function update() {
+  if (state !== "playing") return;
+  frame++;
+  if (safeTime > 0) safeTime--;
+  if (frame % 60 === 0) score++; // a point for every second you survive
+
+  if (keys["ArrowLeft"]) player.x -= CONFIG.playerSpeed;
+  if (keys["ArrowRight"]) player.x += CONFIG.playerSpeed;
+  if (keys["ArrowUp"]) player.y -= CONFIG.playerSpeed;
+  if (keys["ArrowDown"]) player.y += CONFIG.playerSpeed;
+  player.x = Math.max(20, Math.min(W - 20, player.x));
+  player.y = Math.max(20, Math.min(H - 20, player.y));
+
+  if (frame % CONFIG.meteorEvery === 0) spawnMeteor();
+  if (frame % CONFIG.gemEvery === 0) gems.push({ x: 40 + Math.random() * (W - 80), y: 40 + Math.random() * (H - 80) });
+
+  for (const m of meteors) {
+    m.x += m.vx;
+    m.y += m.vy;
+    if (safeTime === 0 && touching(m, player, 30)) {
+      m.gone = true;
+      lives--;
+      safeTime = 60; // a second of safety after being hit
+      beep(110, 0.3);
+    }
+    if (m.x < -50 || m.x > W + 50 || m.y < -50 || m.y > H + 50) m.gone = true;
+  }
+  meteors = meteors.filter(m => !m.gone);
+
+  for (const g of gems) {
+    if (touching(g, player, 30)) {
+      g.gone = true;
+      score += CONFIG.gemPoints;
+      beep(990, 0.1);
+    }
+  }
+  gems = gems.filter(g => !g.gone);
+
+  if (lives <= 0) state = "gameover";
+}
+
+function draw() {
+  ctx.fillStyle = CONFIG.background;
+  ctx.fillRect(0, 0, W, H);
+
+  if (state === "start") {
+    drawText(CONFIG.title, W / 2, H / 2 - 40, 56);
+    drawText("Arrow keys to move. Dodge the meteors, grab the gems!", W / 2, H / 2 + 20, 22);
+    drawText("Press SPACE to start", W / 2, H / 2 + 60, 24, "#ffd400");
+    return;
+  }
+
+  for (const g of gems) drawEmoji(CONFIG.gem, g.x, g.y, 28);
+  for (const m of meteors) drawEmoji(CONFIG.meteor, m.x, m.y, 34);
+  // Flash while safe after a hit
+  if (safeTime === 0 || Math.floor(safeTime / 6) % 2 === 0) drawEmoji(CONFIG.player, player.x, player.y, 40);
+
+  drawText("Score: " + score, 80, 24, 22);
+  drawText("❤️".repeat(Math.max(0, lives)), W - 80, 24, 22);
+
+  if (state === "gameover") {
+    drawText("GAME OVER", W / 2, H / 2 - 20, 60, "#ff4d4d");
+    drawText("Score: " + score + "  -  press SPACE to play again", W / 2, H / 2 + 40, 24);
+  }
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
