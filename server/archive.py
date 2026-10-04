@@ -14,6 +14,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import secrets
 import sqlite3
 import time
 import zipfile
@@ -26,7 +27,7 @@ ARCHIVE_NAME_RE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}(?:-[a-z0-9-]
 # Tables cleared for a new event, children first.
 EVENT_TABLES = ("votes", "ratings", "jobs", "versions", "games", "teams")
 # Settings that belong to the leader or the Pis, not to one event.
-KEEP_SETTINGS = ("leader_token",)
+KEEP_SETTINGS = ("leader_tokens",)
 
 
 def _slug(text: str) -> str:
@@ -38,7 +39,7 @@ def build_export(db: DB, event_name: str) -> bytes:
     games = db.all(
         "SELECT g.id, g.title, g.description, g.published_version_id, t.name AS team_name, t.emoji AS team_emoji, "
         "v.code FROM games g JOIN teams t ON t.id=g.team_id JOIN versions v ON v.id=g.current_version_id "
-        "WHERE g.hidden=0 ORDER BY t.name, g.id"
+        "WHERE g.hidden=0 AND t.demo=0 ORDER BY t.name, g.id"
     )
     buf = io.BytesIO()
     links = []
@@ -66,16 +67,41 @@ def archive_dir(data_dir: Path) -> Path:
     return data_dir / "archive"
 
 
+def current_event_id(db: DB) -> str:
+    """A random id for the event in progress; "Start a new event" gives the next one a new id."""
+    event_id = db.get_setting("event_id")
+    if not event_id:
+        event_id = secrets.token_hex(8)
+        db.set_setting("event_id", event_id)
+    return event_id
+
+
+def find_archive(data_dir: Path, event_id: str) -> Path | None:
+    for summary in list_archives(data_dir):
+        if summary.get("event_id") == event_id:
+            return archive_dir(data_dir) / summary["name"]
+    return None
+
+
 def archive_event(db: DB, data_dir: Path, event_name: str) -> dict:
-    """Snapshot the current event into data/archive/<date>-<name>/ and return its summary."""
-    stamp = time.strftime("%Y-%m-%d-%H%M")
-    name = f"{stamp}-{_slug(event_name)}"[:80].rstrip("-")
-    folder = archive_dir(data_dir) / name
-    n = 2
-    while folder.exists():
-        folder = archive_dir(data_dir) / f"{name}-{n}"
-        n += 1
-    folder.mkdir(parents=True)
+    """Snapshot the current event into data/archive/<date>-<name>/ and return its summary.
+
+    Saving the same event again (e.g. "Put tonight's games online", then later
+    "Start a new event") refreshes its existing snapshot instead of making a second one.
+    """
+    event_id = current_event_id(db)
+    folder = find_archive(data_dir, event_id)
+    if folder is None:
+        stamp = time.strftime("%Y-%m-%d-%H%M")
+        name = f"{stamp}-{_slug(event_name)}"[:80].rstrip("-")
+        folder = archive_dir(data_dir) / name
+        n = 2
+        while folder.exists():
+            folder = archive_dir(data_dir) / f"{name}-{n}"
+            n += 1
+        folder.mkdir(parents=True)
+    for old in ("scout.db", "scout.db-wal", "scout.db-shm"):
+        (folder / old).unlink(missing_ok=True)
 
     # SQLite's backup API copies a consistent snapshot even while the portal is running.
     with db.lock:
@@ -88,11 +114,13 @@ def archive_event(db: DB, data_dir: Path, event_name: str) -> dict:
 
     summary = {
         "name": folder.name,
+        "event_id": event_id,
         "event_name": event_name,
         "archived_at": time.time(),
-        "teams": db.value("SELECT COUNT(*) FROM teams"),
-        "games": db.value("SELECT COUNT(*) FROM games"),
-        "published": db.value("SELECT COUNT(*) FROM games WHERE published_version_id IS NOT NULL"),
+        "teams": db.value("SELECT COUNT(*) FROM teams WHERE demo=0"),
+        "games": db.value("SELECT COUNT(*) FROM games g JOIN teams t ON t.id=g.team_id WHERE t.demo=0"),
+        "published": db.value("SELECT COUNT(*) FROM games g JOIN teams t ON t.id=g.team_id "
+                              "WHERE t.demo=0 AND g.published_version_id IS NOT NULL"),
         "ai_requests": db.value("SELECT COUNT(*) FROM jobs WHERE kind='edit'"),
     }
     (folder / "summary.json").write_text(json.dumps(summary, indent=2))

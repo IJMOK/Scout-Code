@@ -214,3 +214,89 @@ def test_full_event_flow(browser, server, tmp_path):
     leader.screenshot(path=str(shots / "9-new-event.png"), full_page=True)
     p1.wait_for_url("**/login", timeout=10000)
     assert leader.inner_text("#join-code").strip() != join
+
+
+def test_slides_and_every_dashboard_link(browser, server, tmp_path):
+    shots = Path(os.environ.get("SCOUT_SCREENSHOTS", tmp_path))
+    ctx = browser.new_context(viewport={"width": 1366, "height": 768})
+    leader = ctx.new_page()
+    errors = []
+    leader.on("pageerror", lambda e: errors.append(str(e)))
+    leader.goto(server + "/leader")
+    leader.fill("#pin", "999999")
+    leader.click("#login button")
+    leader.wait_for_selector("#dash:not(.hidden)")
+    join = leader.inner_text("#join-code").strip()
+
+    # Every new link on the dashboard points somewhere real.
+    for selector in ["#nav-slides", "#open-slides", "#session-card a[href*='#join']", "#on-zip"]:
+        href = leader.get_attribute(selector, "href")
+        assert leader.request.get(server + href.split("#")[0]).status == 200, selector
+    jumps = [a.get_attribute("href") for a in leader.locator("#session-card a[href*='/present#']").all()]
+    assert [h.split("#")[1] for h in jumps] == ["welcome", "join", "build", "pause", "arcade", "reflect"]
+
+    # The slides: jump straight to "Join now", then see a team appear live.
+    slides = ctx.new_page()
+    slides.on("pageerror", lambda e: errors.append(str(e)))
+    slides.goto(server + "/present#join")
+    slides.wait_for_selector(f".joincode-big:has-text('{join}')")
+    scout = browser.new_context().new_page()
+    scout.goto(server + "/login")
+    scout.fill("#team-name", "Rocket Otters")
+    scout.fill("#join-code", join)
+    scout.click("#new-form button[type=submit]")
+    scout.wait_for_selector("#pin-card:not(.hidden)")
+    slides.wait_for_selector(".team-chip:has-text('Rocket Otters')", timeout=10000)
+    slides.screenshot(path=str(shots / "s-join-live.png"))
+
+    # Step through every slide from the start.
+    slides.goto(server + "/present#welcome")
+    slides.wait_for_selector("#counter:has-text('1 /')")
+    total = int(slides.inner_text("#counter").split("/")[1])
+    for i in range(2, total + 1):
+        slides.keyboard.press("ArrowRight")
+        slides.wait_for_selector(f"#counter:has-text('{i} /')")
+    assert slides.url.endswith("#thanks")
+
+    # Eyes up front: P pauses and resumes the AI.
+    slides.goto(server + "/present#pause")
+    slides.wait_for_selector("text=AI running")
+    slides.keyboard.press("p")
+    slides.wait_for_selector("text=AI paused")
+    assert leader.request.get(server + "/api/leader/status").json()["ai_paused"] is True
+    slides.keyboard.press("p")
+    slides.wait_for_selector("text=AI running")
+
+    # Build timer: S starts it, and it counts down.
+    slides.goto(server + "/present#build")
+    slides.wait_for_selector("#timer")
+    slides.keyboard.press("s")
+    first = slides.inner_text("#timer")
+    slides.wait_for_timeout(1500)
+    assert slides.inner_text("#timer") != first
+
+    # N shows speaker notes; D opens the dashboard.
+    slides.keyboard.press("n")
+    assert slides.is_visible("#notes")
+    with ctx.expect_page() as dash:
+        slides.keyboard.press("d")
+    dash.value.wait_for_load_state()
+    assert dash.value.url.endswith("/leader")
+
+    # Live demo (dashboard button) opens the studio as the leaders' team.
+    with ctx.expect_page() as studio:
+        leader.click("#btn-demo")
+    studio.value.wait_for_selector("#team-label:has-text('Leaders')", timeout=10000)
+
+    # Games online: save settings, preview opens the local site, sync explains what's missing.
+    leader.fill("#on-repo", "1st-anytown/scout-games")
+    leader.click("#online-form button[type=submit]")
+    leader.wait_for_selector("text=Settings saved")
+    with ctx.expect_page() as preview:
+        leader.click("#on-preview")
+    preview.value.wait_for_load_state()
+    assert "/leader/site-preview/" in preview.value.url
+    leader.click("#on-sync")
+    leader.wait_for_selector("#on-status:has-text('token')", timeout=10000)
+    leader.screenshot(path=str(shots / "d2-online-card.png"), full_page=True)
+    assert errors == [], errors

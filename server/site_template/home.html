@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{{SITE_TITLE}}</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎮</text></svg>">
+<style>{{CSS}}</style>
+</head>
+<body>
+<header class="top"><span class="logo">🎮🤖</span> <span id="site-title">{{SITE_TITLE}}</span></header>
+<main class="page">
+  <p class="lead">Video games made by young people at our Scout Code sessions, where teams worked with an AI that ran on two little Raspberry Pi computers, with no internet.</p>
+  <p class="muted">Each session stays online for a limited time, then it's removed.</p>
+  <div class="grid" id="sessions"></div>
+  <p class="muted hidden" id="none">There are no sessions online at the moment.</p>
+</main>
+<footer>Made with Scout Code · No adverts, no tracking, no accounts.</footer>
+<script>
+fetch("sessions.json", { cache: "no-store" })
+  .then(r => r.json())
+  .then(list => {
+    const now = Date.now() / 1000;
+    const live = list.filter(s => s.expires > now).sort((a, b) => b.date.localeCompare(a.date));
+    document.getElementById("none").classList.toggle("hidden", live.length > 0);
+    const grid = document.getElementById("sessions");
+    for (const s of live) {
+      const a = document.createElement("a");
+      a.className = "card session";
+      a.href = "s/" + s.slug + "/";
+      const h = document.createElement("h2");
+      h.textContent = s.title;
+      const p = document.createElement("p");
+      p.className = "muted";
+      const until = new Date(s.expires * 1000).toLocaleDateString(undefined, { day: "numeric", month: "long" });
+      p.textContent = `${new Date(s.date).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })} · ${s.games} game${s.games === 1 ? "" : "s"} · online until ${until}`;
+      a.append(h, p);
+      grid.append(a);
+    }
+  })
+  .catch(() => { document.getElementById("none").classList.remove("hidden"); });
+</script>
+</body>
+</html>

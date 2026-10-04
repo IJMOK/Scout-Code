@@ -57,6 +57,8 @@ On the day:
 - Put **/leader** on the projector for the join code, then **/awards** at the end.
 - **💾 Download all games** on the dashboard gives a zip of every game as a stand-alone HTML file, ready for USB sticks.
 - **⏻ Shut down both Pis** switches everything off safely at the end.
+- **🎬 Session slides** (`/present`): projector slides for the whole evening, covering welcome, chat vs agentic AI, risks and how they're managed, the setup's limits, a live demo, a live join screen, the build timer, "eyes up front" (pauses the AI), arcade, reflection, plus speaker notes.
+- **🌐 Games online**: when the Pi is back on the internet, publish the games to your group's own free GitHub Pages site for families. It's hidden from search engines, sessions expire automatically, and it has a safeguarding checklist. See **[docs/games-online.md](docs/games-online.md)**.
 - **🔄 Start a new event** saves everything to *Past events*, then clears teams, games and votes for the next group. The Pis don't need restarting.
 
 ## Developing on a normal computer
@@ -83,6 +85,9 @@ The mock understands emoji ("make the player a 🐸"), colours, "faster" and "sl
 | `server/edits.py` | Forgiving SEARCH/REPLACE parser for small models |
 | `server/prompts.py` | Everything the AI is told |
 | `server/llm.py` | llama-server streaming client + the mock AI |
+| `server/publish.py`, `server/site_template/` | Builds the families' games website and pushes it to GitHub Pages |
+| `server/awards.py` | Arcade list, awards and leaderboard (shared by the live site and the website) |
+| `web/present.html`, `web/js/present.js` | The projector slides: edit the `SLIDES` list to change the words |
 | `server/starters/` | The 8 starter games and their idea cards |
 | `server/stats_agent.py` | Pi temperature/load reporter for the dashboard |
 | `web/` | The pages (plain HTML/JS, no build step, no CDNs; libraries vendored in `web/vendor/`) |

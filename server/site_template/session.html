@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{{TITLE}}</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕹️</text></svg>">
+<style>{{CSS}}</style>
+</head>
+<body>
+<header class="top"><a class="logo" href="../../">🎮🤖</a> <span id="title"></span></header>
+<main class="page">
+  <p class="muted" id="when"></p>
+  <section id="awards-wrap" class="hidden">
+    <h2>🏆 Awards</h2>
+    <div class="grid" id="awards"></div>
+  </section>
+  <h2>🕹️ The games</h2>
+  <p class="muted">Tap a game to play. Most games use the arrow keys and SPACE; on a phone or tablet, on-screen buttons appear.</p>
+  <div class="grid" id="games"></div>
+</main>
+<footer id="expiry"></footer>
+
+<div class="modal-back hidden" id="modal">
+  <div class="modal">
+    <div class="modal-head">
+      <h2 id="play-title"></h2>
+      <span class="muted" id="play-by"></span>
+      <span class="spacer"></span>
+      <button class="btn" id="restart">🔄 Restart</button>
+      <button class="btn" id="close">✖ Close</button>
+    </div>
+    <p class="muted" id="play-desc"></p>
+    <p class="muted rotate-hint">📱↻ Turn your phone sideways for a bigger game.</p>
+    <div class="player" id="player"></div>
+  </div>
+</div>
+
+<script id="data" type="application/json">{{DATA_JSON}}</script>
+<script>
+const D = JSON.parse(document.getElementById("data").textContent);
+const $ = s => document.querySelector(s);
+const fmt = t => new Date(t * 1000).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" });
+document.title = D.title;
+$("#title").textContent = D.title;
+$("#when").textContent = `${fmt(D.date)} · ${D.games.length} game${D.games.length === 1 ? "" : "s"}`;
+$("#expiry").textContent = `This page will be removed after ${fmt(D.expires)}. Made with Scout Code · No adverts, no tracking, no accounts.`;
+
+const stars = avg => avg ? "★".repeat(Math.round(avg)) + "☆".repeat(5 - Math.round(avg)) : "";
+
+function card(g, extra) {
+  const c = document.createElement("button");
+  c.className = "card game";
+  c.innerHTML = (extra ? `<div class="award-label"></div>` : "") +
+    `<h3></h3><div class="by"></div><div class="muted desc"></div><div class="stars"></div>`;
+  if (extra) c.querySelector(".award-label").textContent = extra;
+  c.querySelector("h3").textContent = g.title;
+  c.querySelector(".by").textContent = `${g.emoji} ${g.team}`;
+  c.querySelector(".desc").textContent = g.description || "";
+  c.querySelector(".stars").textContent = stars(g.stars);
+  c.onclick = () => openGame(g);
+  return c;
+}
+
+for (const g of D.games) $("#games").append(card(g));
+if (D.awards.length) {
+  $("#awards-wrap").classList.remove("hidden");
+  for (const a of D.awards) {
+    const g = D.games.find(x => x.id === a.game_id);
+    if (g) $("#awards").append(card(g, `${a.label} · ${a.detail}`));
+  }
+}
+
+let current = null;
+function openGame(g) {
+  current = g;
+  $("#play-title").textContent = g.title;
+  $("#play-by").textContent = `by ${g.emoji} ${g.team}`;
+  $("#play-desc").textContent = g.description || "";
+  load();
+  $("#modal").classList.remove("hidden");
+}
+function load() {
+  const f = document.createElement("iframe");
+  f.setAttribute("sandbox", "allow-scripts");
+  f.setAttribute("title", current.title);
+  f.src = `games/${current.id}.html`;
+  f.addEventListener("load", () => f.focus());
+  $("#player").replaceChildren(f);
+}
+function close() { $("#modal").classList.add("hidden"); $("#player").replaceChildren(); current = null; }
+$("#restart").onclick = load;
+$("#close").onclick = close;
+$("#modal").addEventListener("click", e => { if (e.target.id === "modal") close(); });
+</script>
+</body>
+</html>

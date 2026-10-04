@@ -12,14 +12,24 @@
   .workers { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
   .worker { border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; }
   .scroll { max-height: 360px; overflow: auto; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .form-grid { display: grid; gap: 4px 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+  .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; margin: 6px 0; }
+  .check input { width: auto; margin-top: 4px; }
+  .sync-status { padding: 8px 12px; border-radius: 10px; background: var(--bg); }
+  .sync-status.error { background: #fde0e0; color: #8a1c1c; }
+  .sync-status.ok { background: #d4f5e2; color: #135c33; }
+  .sync-status.syncing { background: #fff1cc; color: #7a5200; }
 </style>
 </head>
 <body>
 <header class="topbar">
   <a class="logo" href="/leader">🧭 Leader dashboard</a>
   <span class="spacer"></span>
+  <a class="btn small" href="/present" target="_blank" id="nav-slides">🎬 Session slides</a>
   <a class="btn small" href="/awards" target="_blank">🏆 Awards screen</a>
   <a class="btn small" href="/arcade" target="_blank">🕹️ Arcade</a>
+  <a class="btn small hidden" href="#" target="_blank" id="nav-site">🌐 Our games site</a>
 </header>
 
 <main class="page" style="max-width:1300px">
@@ -31,6 +41,22 @@
   </form>
 
   <div class="dash hidden" id="dash">
+    <section class="card wide" id="session-card">
+      <h2>🎬 Running the session</h2>
+      <p class="muted" style="font-size:14px">Put the slides on the projector (F for full screen, arrow keys to move, N for your speaker notes, P to pause the AI, D to come back here).</p>
+      <div class="row">
+        <a class="btn primary" href="/present" target="_blank" id="open-slides">Open slides</a>
+        <span class="muted">Jump to:</span>
+        <a class="btn small" href="/present#welcome" target="_blank">👋 Welcome</a>
+        <a class="btn small" href="/present#join" target="_blank">🔑 Join now</a>
+        <a class="btn small" href="/present#build" target="_blank">⏱️ Build timer</a>
+        <a class="btn small" href="/present#pause" target="_blank">✋ Eyes up front</a>
+        <a class="btn small" href="/present#arcade" target="_blank">🕹️ Arcade</a>
+        <a class="btn small" href="/present#reflect" target="_blank">💭 Reflection</a>
+        <button class="btn small" id="btn-demo">▶ Live demo as Leaders' team</button>
+      </div>
+    </section>
+
     <section class="card">
       <h2>Join code</h2>
       <div class="joincode" id="join-code">····</div>
@@ -88,7 +114,41 @@
       </div>
       <div id="new-event-done" class="hidden" style="margin-top:12px"></div>
       <h3 style="margin-top:20px">Past events</h3>
-      <div class="scroll"><table><thead><tr><th>Event</th><th>Saved</th><th>Teams</th><th>Games</th><th>Download</th></tr></thead><tbody id="archives"></tbody></table></div>
+      <div class="scroll"><table><thead><tr><th>Event</th><th>Saved</th><th>Teams</th><th>Games</th><th>Download</th><th>Online</th><th>Until</th><th>Parent link</th></tr></thead><tbody id="archives"></tbody></table></div>
+    </section>
+
+    <section class="card wide" id="online-card">
+      <h2>🌐 Games online</h2>
+      <p class="muted" style="font-size:14px">When this Pi is connected to the internet, put the games on your group's own free website (GitHub Pages) so families can play them at home. Pages are hidden from search engines, each session has a hard-to-guess link, and sessions are removed automatically after the number of days you choose. Set-up guide: <code>docs/games-online.md</code>.</p>
+      <form id="online-form">
+        <div class="form-grid">
+          <div><label for="on-repo">GitHub repository</label><input id="on-repo" placeholder="your-group/scout-games" autocomplete="off"></div>
+          <div><label for="on-token">Access token <span class="muted" id="on-token-hint"></span></label><input id="on-token" type="password" placeholder="paste a fine-grained token (only needed once)" autocomplete="off"></div>
+          <div><label for="on-title">Website title</label><input id="on-title" maxlength="80"></div>
+          <div><label for="on-days">Keep each session online for (days)</label><input id="on-days" type="number" min="1" max="365"></div>
+        </div>
+        <label class="check"><input type="checkbox" id="on-hide-names"> Hide team names online (show "Team 1", "Team 2"…)</label>
+        <label class="check"><input type="checkbox" id="on-auto-expire"> Remove expired sessions automatically, even when the Pi is off (adds a small daily GitHub job)</label>
+        <fieldset style="border:1px solid var(--line);border-radius:10px;margin:10px 0">
+          <legend><b>Before anything goes online</b> (tick all three)</legend>
+          <label class="check"><input type="checkbox" class="on-check"> Parents/carers have agreed to their young people's games being shared online.</label>
+          <label class="check"><input type="checkbox" class="on-check"> Team names and game titles don't include anyone's real name.</label>
+          <label class="check"><input type="checkbox" class="on-check"> I've looked at the preview and I'm happy with every game (or left some out).</label>
+        </fieldset>
+        <div class="row">
+          <button class="btn" type="submit">💾 Save settings</button>
+          <button class="btn" type="button" id="on-test">🔌 Test connection</button>
+          <button class="btn" type="button" id="on-preview">👀 Preview the site</button>
+          <a class="btn" href="/api/leader/publish/site.zip" id="on-zip">📦 Download website zip</a>
+        </div>
+      </form>
+      <div class="row" style="margin-top:12px">
+        <button class="btn primary" id="on-tonight">🌐 Put tonight's games online</button>
+        <button class="btn" id="on-sync">🔄 Sync now</button>
+        <button class="btn danger" id="on-offline">Take everything offline</button>
+      </div>
+      <p class="sync-status" id="on-status" style="margin-top:12px">Not set up yet.</p>
+      <p id="on-site" class="hidden">Website: <a id="on-site-link" target="_blank"></a> <button class="btn small" id="on-site-copy">Copy</button></p>
     </section>
 
     <section class="card wide">
@@ -118,7 +178,17 @@
   </div>
 </div>
 
+<div class="modal-back hidden" id="choose-modal">
+  <div class="modal">
+    <h2 id="choose-title">Which games go online?</h2>
+    <p class="muted">Untick any game you'd rather leave out.</p>
+    <div id="choose-list"></div>
+    <p class="row"><button class="btn primary" id="choose-save">Save</button><button class="btn" id="choose-cancel">Cancel</button></p>
+  </div>
+</div>
+
 <script src="/static/js/common.js"></script>
+<script src="/static/js/leader-online.js"></script>
 <script src="/static/js/leader.js"></script>
 </body>
 </html>

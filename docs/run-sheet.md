@@ -7,7 +7,7 @@
 
 - [ ] Power up the router, then both Pis, **at least 20 minutes before** scouts arrive.
 - [ ] Open `/leader` on the leader laptop. Check both workers are 🟢 and show **🔥 Warm ✓**, then set the **event name**. Warming up pre-loads the starter games so first requests are fast. It starts by itself; press **🔥 Warm up AI** if a Pi was restarted.
-- [ ] Put `/leader` on the projector so the **join code** and the address (`http://scout.local` or the IP) are visible.
+- [ ] On the projector laptop: dashboard → **🎬 Session slides** (press **F** for full screen). The slides follow this run sheet, with speaker notes on **N**, or **W** for a separate notes window if you have a second screen.
 - [ ] Open `/studio` on each laptop's browser, so it lands on the join page.
 - [ ] **Pause the AI** until the build starts, so nobody starts early.
 
@@ -15,14 +15,14 @@
 
 | Time | What | Notes |
 |---|---|---|
-| 0:00 | **Welcome + "What is an AI agent?"** (10 min) | Script below. Live demo on the projector with your own team. |
-| 0:10 | **Team jobs + rules** (5 min) | Roles below. Swap roles every 15 minutes, when a leader calls "**Switch!**" |
-| 0:15 | **Join + pick a starter** (10 min) | Unpause the AI. Everyone's first change: swap the player emoji (e.g. "make the player a 🦖"). Quick and nearly always works. |
-| 0:25 | **Build time** (75 min) | Leaders circulate. Prompt with "what's your next idea?", "can you find the line that changed?", "press Explain on it". |
+| 0:00 | **Welcome + "What is an AI agent?"** (10 min) | Slides 1-9: welcome, plan, chat vs agent, risks, limits, how it works. Press **▶ Live demo** on slide 8 to show a real change as the Leaders' team (its games don't count for awards). |
+| 0:10 | **Team jobs + rules** (5 min) | Slide 10. Swap roles every 15 minutes, when a leader calls "**Switch!**" |
+| 0:15 | **Join + pick a starter** (10 min) | Slide 11 shows the join code and teams appearing live. Press **P** to unpause the AI. Everyone's first change: swap the player emoji (e.g. "make the player a 🦖"). |
+| 0:25 | **Build time** (75 min) | Slide 12: press **S** to start the 75-minute timer (**+**/**−** change it). Use slide 13 "Eyes up front" (P pauses the AI) whenever you need everyone's attention. Leaders circulate. |
 | 1:40 | **Polish + publish** (10 min) | Leader shouts the 10-minute warning at 1:30. Everyone must publish. A good title and a one-line "how to play" matter! |
-| 1:50 | **Arcade** (25 min) | Teams play every other team's game, give stars and a reaction, and vote for the awards. They can't vote for their own. |
+| 1:50 | **Arcade** (25 min) | Slide 14. Teams play every other team's game, give stars and a reaction, and vote for the awards. They can't vote for their own. |
 | 2:15 | **Close voting → Awards** (10 min) | Dashboard: 🔒 Close voting, then 🏆 Reveal awards. Show `/awards` and click each card to reveal it. |
-| 2:25 | **Reflection** (5 min) | Questions below. Download the zip for USB sticks. |
+| 2:25 | **Reflection** (5 min) | Slides 15-16. Download the zip for USB sticks. If you're putting the games online, the last slide shows the website address. |
 
 ## Team jobs
 

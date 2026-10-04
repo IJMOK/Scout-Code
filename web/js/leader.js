@@ -120,26 +120,13 @@ $("#login").onsubmit = async e => {
   try {
     await api("/api/leader/login", { method: "POST", body: { pin: $("#pin").value } });
     await refresh();
-    await loadArchives();
+    await loadPublish();
   } catch (err) { toast(err.message, true); }
 };
 
 $("#t-ai").onclick = () => post("/api/leader/settings", { ai_paused: !L.ai_paused });
 $("#t-vote").onclick = () => post("/api/leader/settings", { voting_frozen: !L.voting_frozen });
 $("#t-awards").onclick = () => post("/api/leader/settings", { awards_revealed: !L.awards_revealed });
-async function loadArchives() {
-  try {
-    const list = await api("/api/leader/archives");
-    $("#archives").innerHTML = list.length ? list.map(a => `<tr>
-        <td>${esc(a.event_name)}</td>
-        <td>${new Date(a.archived_at * 1000).toLocaleString()}</td>
-        <td>${a.teams}</td><td>${a.games} (${a.published} published)</td>
-        <td><a href="/api/leader/archives/${encodeURIComponent(a.name)}/games.zip">💾 games.zip</a>
-          · <a href="/api/leader/archives/${encodeURIComponent(a.name)}/scout.db" title="Full backup, for restoring">backup</a></td>
-      </tr>`).join("") : '<tr><td colspan="5" class="muted">None yet</td></tr>';
-  } catch (err) { /* shown on next refresh */ }
-}
-
 $("#btn-new-event").onclick = async () => {
   const name = $("#next-event-name").value.trim();
   if (name.length < 2) { toast("Type a name for the new event first.", true); $("#next-event-name").focus(); return; }
@@ -157,7 +144,7 @@ $("#btn-new-event").onclick = async () => {
       New join code: <b>${esc(res.join_code)}</b>`;
     toast("New event started! 🎉");
     await refresh();
-    await loadArchives();
+    await loadPublish();
   } catch (err) { toast(err.message, true); }
   btn.disabled = false;
 };
@@ -179,5 +166,5 @@ $("#btn-warm").onclick = () => post("/api/leader/warmup");
 $("#btn-newcode").onclick = () => post("/api/leader/join-code");
 $("#btn-name").onclick = () => post("/api/leader/settings", { event_name: $("#event-name").value });
 
-refresh().then(loadArchives).catch(err => toast(err.message, true));
+refresh().then(loadPublish).catch(err => toast(err.message, true));
 setInterval(() => { if (!shuttingDown && !$("#dash").classList.contains("hidden")) refresh().catch(() => {}); }, 3000);

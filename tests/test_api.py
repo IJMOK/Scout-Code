@@ -344,3 +344,66 @@ def test_archive_downloads_are_guarded(client, app):
     assert leader.get(f"/api/leader/archives/{name}/leader-pin.txt").status_code == 404
     assert client.get(f"/api/leader/archives/{name}/games.zip").status_code == 401
     assert client.post("/api/leader/new-event", json={"event_name": "Hack"}).status_code == 401
+
+
+def test_two_leaders_can_be_logged_in_at_once(client, app):
+    projector, helper = TestClient(app), TestClient(app)
+    projector.post("/api/leader/login", json={"pin": "123456"})
+    helper.post("/api/leader/login", json={"pin": "123456"})
+    assert projector.get("/api/leader/status").status_code == 200
+    assert helper.get("/api/leader/status").status_code == 200
+
+
+def test_demo_team_is_kept_out_of_the_competition(client, app):
+    import io
+    import zipfile
+
+    leader = TestClient(app)
+    leader.post("/api/leader/login", json={"pin": "123456"})
+    r = leader.post("/api/leader/demo-team")
+    assert r.status_code == 200 and r.json()["team"]["name"] == "Leaders' demo"
+    assert leader.post("/api/leader/demo-team").json()["team"]["id"] == r.json()["team"]["id"]  # same team again
+    demo_game = new_game(leader, "flappy")
+    leader.post(f"/api/games/{demo_game}/publish", json={"title": "Demo Chick"})
+
+    a, _ = make_team(app, "Alpha")
+    ga = new_game(a, "maze")
+    a.post(f"/api/games/{ga}/publish", json={"title": "Mouse Run"})
+    # Scouts can see and play the demo game, but can't vote for it.
+    assert {g["title"] for g in a.get("/api/arcade").json()["games"]} == {"Demo Chick", "Mouse Run"}
+    assert a.post(f"/api/arcade/{demo_game}/rate", json={"stars": 5}).status_code == 400
+    assert a.post(f"/api/arcade/{demo_game}/vote", json={"category": "fun"}).status_code == 400
+
+    # Even if it somehow had votes, it never wins and isn't exported.
+    app.state.db.execute("INSERT INTO ratings(game_id, team_id, stars, created_at) VALUES(?,?,5,0)",
+                         (demo_game, a.get("/api/me").json()["team"]["id"]))
+    leader.post("/api/leader/settings", json={"awards_revealed": True})
+    awards = leader.get("/api/awards").json()
+    assert all(x["game"]["title"] != "Demo Chick" for x in awards["awards"])
+    assert all(g["title"] != "Demo Chick" for g in awards["leaderboard"])
+    names = zipfile.ZipFile(io.BytesIO(leader.get("/api/leader/export.zip").content)).namelist()
+    assert not any("demo" in n.lower() for n in names)
+
+
+def test_old_database_gets_the_demo_column(tmp_path):
+    import sqlite3
+
+    from server.db import DB
+
+    path = tmp_path / "old.db"
+    old = sqlite3.connect(path)
+    old.execute("CREATE TABLE teams (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, emoji TEXT NOT NULL, "
+                "pin TEXT NOT NULL, token TEXT NOT NULL UNIQUE, last_worker TEXT, created_at REAL NOT NULL)")
+    old.execute("INSERT INTO teams VALUES (1, 'Owls', '🦉', '1234', 'tok', NULL, 0)")
+    old.commit()
+    old.close()
+    db = DB(path)
+    assert db.one("SELECT name, demo FROM teams") == {"name": "Owls", "demo": 0}
+
+
+def test_slides_are_for_leaders_only(client, app):
+    r = client.get("/present", follow_redirects=False)
+    assert r.status_code in (302, 307) and r.headers["location"] == "/leader"
+    leader = TestClient(app)
+    leader.post("/api/leader/login", json={"pin": "123456"})
+    assert leader.get("/present").status_code == 200

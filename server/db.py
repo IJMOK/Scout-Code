@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS teams (
   pin TEXT NOT NULL,
   token TEXT NOT NULL UNIQUE,
   last_worker TEXT,
+  demo INTEGER NOT NULL DEFAULT 0,  -- the leaders' demo team: not in awards, export or online
   created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS games (
@@ -97,6 +98,17 @@ class DB:
             self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA foreign_keys=ON")
             self.conn.executescript(SCHEMA)
+            self._migrate()
+
+    def _migrate(self) -> None:
+        """Bring databases from older versions (and saved events) up to date."""
+        columns = {r[1] for r in self.conn.execute("PRAGMA table_info(teams)")}
+        if "demo" not in columns:
+            self.conn.execute("ALTER TABLE teams ADD COLUMN demo INTEGER NOT NULL DEFAULT 0")
+
+    def close(self) -> None:
+        with self.lock:
+            self.conn.close()
 
     def execute(self, sql: str, params: tuple | dict = ()) -> int:
         with self.lock:

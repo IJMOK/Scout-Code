@@ -22,7 +22,9 @@ from pydantic import BaseModel, Field
 
 from . import safety
 from .config import ROOT, Settings, load_settings
+from . import publish as online
 from .archive import archive_event, archive_file, build_export, list_archives, reset_event
+from .awards import AWARD_CATEGORIES, compute_awards, leaderboard, published_games
 from .db import DB, now
 from .jobqueue import Hub, JobQueue, Worker
 from .llm import LlamaServer, MockLLM
@@ -35,11 +37,6 @@ STARTERS_DIR = ROOT / "server" / "starters"
 STARTERS: list[dict] = json.loads((STARTERS_DIR / "starters.json").read_text(encoding="utf-8"))
 STARTER_IDS = {s["id"] for s in STARTERS}
 
-AWARD_CATEGORIES = {
-    "fun": "🎉 Most Fun",
-    "looks": "🎨 Best Looking",
-    "creative": "💡 Most Creative",
-}
 REACTIONS = ["😂", "🤯", "🔥", "😍", "👏"]
 TEAM_EMOJIS = ["🦊", "🐺", "🦉", "🐻", "🦁", "🐯", "🐸", "🐙", "🦄", "🐲", "🦅", "🐬", "🦖", "🐝", "🐧", "🦈"]
 
@@ -53,6 +50,7 @@ PLAY_CSP = ("sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inlin
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
+    settings.data_dir.mkdir(parents=True, exist_ok=True)
     db = DB(settings.db_path)
     hub = Hub()
     safety.load_extra_words(settings.data_dir / "blocked-words.txt")
@@ -156,6 +154,22 @@ class NewEvent(BaseModel):
     event_name: str = Field(min_length=2, max_length=80)
 
 
+class PublishSettingsIn(BaseModel):
+    repo: str | None = Field(default=None, max_length=200)
+    token: str | None = Field(default=None, max_length=300)  # blank = keep the saved one
+    site_title: str | None = Field(default=None, max_length=80)
+    expiry_days: int | None = Field(default=None, ge=1, le=365)
+    hide_team_names: bool | None = None
+    checklist_done: bool | None = None
+    auto_expire: bool | None = None
+
+
+class SessionUpdate(BaseModel):
+    online: bool | None = None
+    expires_in_days: int | None = Field(default=None, ge=1, le=365)
+    excluded: list[int] | None = None
+
+
 class Hide(BaseModel):
     hidden: bool
 
@@ -175,8 +189,15 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
             raise HTTPException(401, "Please log in")
         return t
 
+    def leader_tokens() -> list[str]:
+        try:
+            return json.loads(db.get_setting("leader_tokens", "[]"))
+        except json.JSONDecodeError:
+            return []
+
     def is_leader(scout_leader: str | None = Cookie(default=None)) -> bool:
-        return bool(scout_leader) and secrets.compare_digest(scout_leader, db.get_setting("leader_token", "-"))
+        # Several leaders (e.g. the projector laptop and a helper's laptop) can be logged in at once.
+        return bool(scout_leader) and any(secrets.compare_digest(scout_leader, t) for t in leader_tokens())
 
     def leader(ok: bool = Depends(is_leader)) -> bool:
         if not ok:
@@ -218,6 +239,11 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
     @app.get("/leader", include_in_schema=False)
     def leader_page():
         return page("leader.html")
+
+    @app.get("/present", include_in_schema=False)
+    def present_page(lead: bool = Depends(is_leader)):
+        # The slides show the join code and control the AI, so leaders only.
+        return page("present.html") if lead else RedirectResponse("/leader")
 
     @app.get("/awards", include_in_schema=False)
     def awards_page():
@@ -412,31 +438,7 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
 
     # ---- arcade ----
     def arcade_games(viewer_team: int | None, include_hidden: bool = False) -> list[dict]:
-        rows = db.all(
-            "SELECT g.id, g.title, g.description, g.published_version_id AS version_id, g.hidden, g.starter, "
-            "g.published_at, t.id AS team_id, t.name AS team_name, t.emoji AS team_emoji, "
-            "AVG(r.stars) AS avg_stars, COUNT(r.stars) AS ratings "
-            "FROM games g JOIN teams t ON t.id=g.team_id LEFT JOIN ratings r ON r.game_id=g.id "
-            "WHERE g.published_version_id IS NOT NULL " + ("" if include_hidden else "AND g.hidden=0 ") +
-            "GROUP BY g.id ORDER BY g.published_at DESC"
-        )
-        reactions = db.all("SELECT game_id, reaction, COUNT(*) AS n FROM ratings WHERE reaction != '' "
-                           "GROUP BY game_id, reaction")
-        mine = {}
-        if viewer_team:
-            mine = {r["game_id"]: r for r in db.all("SELECT * FROM ratings WHERE team_id=?", (viewer_team,))}
-        my_votes = {}
-        if viewer_team:
-            my_votes = {r["category"]: r["game_id"] for r in
-                        db.all("SELECT category, game_id FROM votes WHERE team_id=?", (viewer_team,))}
-        for g in rows:
-            g["avg_stars"] = round(g["avg_stars"], 2) if g["avg_stars"] else None
-            g["reactions"] = {r["reaction"]: r["n"] for r in reactions if r["game_id"] == g["id"]}
-            g["my_rating"] = mine.get(g["id"], {}).get("stars")
-            g["my_reaction"] = mine.get(g["id"], {}).get("reaction") or ""
-            g["my_votes"] = [c for c, gid in my_votes.items() if gid == g["id"]]
-            g["is_mine"] = viewer_team == g["team_id"]
-        return rows
+        return published_games(db, viewer_team, include_hidden)
 
     @app.get("/api/arcade")
     def arcade(t: dict | None = Depends(team_or_none)):
@@ -452,6 +454,8 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
             raise HTTPException(404, "Game not found")
         if game["team_id"] == t["id"]:
             raise HTTPException(400, "No voting for your own game, nice try! 😄")
+        if db.value("SELECT demo FROM teams WHERE id=?", (game["team_id"],)):
+            raise HTTPException(400, "That's the leaders' demo game, so it isn't in the competition!")
         return game
 
     @app.post("/api/arcade/{game_id}/rate")
@@ -473,34 +477,12 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
                    (body.category, t["id"], game_id))
         return {"ok": True}
 
-    def compute_awards() -> list[dict]:
-        games = {g["id"]: g for g in arcade_games(None)}
-        awards = []
-        rated = [g for g in games.values() if g["ratings"]]
-        if rated:
-            best = max(rated, key=lambda g: (g["avg_stars"], g["ratings"]))
-            awards.append({"category": "stars", "label": "⭐ Top Rated", "game": best,
-                           "detail": f"{best['avg_stars']} stars from {best['ratings']} team{'s' if best['ratings'] != 1 else ''}"})
-        for cat, label in AWARD_CATEGORIES.items():
-            counts = db.all("SELECT game_id, COUNT(*) AS n FROM votes WHERE category=? GROUP BY game_id "
-                            "ORDER BY n DESC, game_id", (cat,))
-            counts = [c for c in counts if c["game_id"] in games]
-            if counts:
-                top = counts[0]
-                awards.append({"category": cat, "label": label, "game": games[top["game_id"]],
-                               "detail": f"{top['n']} vote{'s' if top['n'] != 1 else ''}"})
-        return awards
-
     @app.get("/api/awards")
     def awards(lead: bool = Depends(is_leader)):
         revealed = db.flag("awards_revealed")
         if not (revealed or lead):
             return {"revealed": False, "awards": [], "event_name": event_name()}
-        leaderboard = sorted(
-            (g for g in arcade_games(None) if g["ratings"]),
-            key=lambda g: (-(g["avg_stars"] or 0), -g["ratings"]),
-        )
-        return {"revealed": revealed, "awards": compute_awards(), "leaderboard": leaderboard[:10],
+        return {"revealed": revealed, "awards": compute_awards(db), "leaderboard": leaderboard(db),
                 "event_name": event_name()}
 
     # ---- leader ----
@@ -509,14 +491,14 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
         if not secrets.compare_digest(body.pin.strip(), settings.leader_pin):
             raise HTTPException(400, "Wrong leader PIN")
         token = secrets.token_urlsafe(24)
-        db.set_setting("leader_token", token)
+        db.set_setting("leader_tokens", json.dumps((leader_tokens() + [token])[-10:]))
         set_cookie(response, "scout_leader", token)
         return {"ok": True}
 
     @app.get("/api/leader/status")
     def leader_status(_: bool = Depends(leader)):
         teams = db.all(
-            "SELECT t.id, t.name, t.emoji, t.pin, t.last_worker, "
+            "SELECT t.id, t.name, t.emoji, t.pin, t.last_worker, t.demo, "
             "(SELECT COUNT(*) FROM games g WHERE g.team_id=t.id) AS games, "
             "(SELECT COUNT(*) FROM jobs j WHERE j.team_id=t.id AND j.kind='edit') AS requests, "
             "(SELECT COUNT(*) FROM jobs j WHERE j.team_id=t.id AND j.kind='edit' AND j.status='done') AS successes "
@@ -609,6 +591,136 @@ def _routes(app: FastAPI, db: DB, jobs: JobQueue, hub: Hub, settings: Settings) 
                 results.append({"name": w.name, "ok": ok, "error": error})
         log.info("Shutdown requested: %s", results)
         return {"results": results}
+
+    # ---- games online (GitHub Pages) ----
+    publisher = online.Publisher(settings.data_dir)
+    app.state.publisher = publisher
+
+    @app.get("/api/leader/publish")
+    def publish_status(_: bool = Depends(leader)):
+        s = publisher.settings()
+        return {"settings": s.public(), "status": publisher.status,
+                "site_url": s.site_url or (s.default_site_url() if s.repo else ""),
+                "sessions": online.sessions_overview(settings.data_dir, s),
+                "current_event_id": db.get_setting("event_id")}
+
+    @app.post("/api/leader/publish/settings")
+    def publish_settings(body: PublishSettingsIn, _: bool = Depends(leader)):
+        s = publisher.settings()
+        if body.repo is not None:
+            repo = body.repo.strip().removeprefix("https://github.com/").strip("/")
+            if repo and not online.REPO_RE.match(repo):
+                raise HTTPException(400, "The repository should look like owner/name.")
+            if repo != s.repo:
+                s.site_url = ""
+            s.repo = repo
+        if body.token:
+            s.token = body.token.strip()
+        for key in ("site_title", "expiry_days", "hide_team_names", "checklist_done", "auto_expire"):
+            value = getattr(body, key)
+            if value is not None:
+                setattr(s, key, value.strip() if isinstance(value, str) else value)
+        online.save_settings(settings.data_dir, s)
+        return {"settings": s.public()}
+
+    @app.post("/api/leader/publish/test")
+    def publish_test(_: bool = Depends(leader)):
+        try:
+            return {"ok": True, "message": online.test_connection(publisher.settings())}
+        except online.PublishError as e:
+            return {"ok": False, "message": str(e)}
+
+    def set_online(name: str, on: bool, days: int | None = None) -> dict:
+        state = online.session_state(settings.data_dir, name)
+        state["online"] = on
+        if on and (days or state["expires"] < now()):
+            state["expires"] = now() + (days or publisher.settings().expiry_days) * online.DAY
+        online.save_session_state(settings.data_dir, name, state)
+        return state
+
+    @app.post("/api/leader/publish/tonight")
+    def publish_tonight(_: bool = Depends(leader)):
+        """Save the event in progress (without clearing it) and mark it to go online."""
+        summary = archive_event(db, settings.data_dir, event_name())
+        state = set_online(summary["name"], True)
+        return {"session": {**summary, **state}}
+
+    @app.post("/api/leader/publish/sessions/{name}")
+    def publish_session(name: str, body: SessionUpdate, _: bool = Depends(leader)):
+        if not archive_file(settings.data_dir, name, "scout.db"):
+            raise HTTPException(404, "No such saved event")
+        state = online.session_state(settings.data_dir, name)
+        if body.excluded is not None:
+            state["excluded"] = [int(i) for i in body.excluded]
+            online.save_session_state(settings.data_dir, name, state)
+        if body.online is not None or body.expires_in_days:
+            state = set_online(name, state["online"] if body.online is None else body.online, body.expires_in_days)
+        return {"state": state}
+
+    @app.get("/api/leader/publish/sessions/{name}/games")
+    def publish_session_games(name: str, _: bool = Depends(leader)):
+        path = archive_file(settings.data_dir, name, "scout.db")
+        if not path:
+            raise HTTPException(404, "No such saved event")
+        archived = DB(path)
+        try:
+            return [{k: g[k] for k in ("id", "title", "team_name", "team_emoji")}
+                    for g in published_games(archived, include_demo=False)]
+        finally:
+            archived.close()
+
+    @app.post("/api/leader/publish/sync")
+    def publish_sync(_: bool = Depends(leader)):
+        publisher.sync()
+        return {"status": publisher.status}
+
+    @app.post("/api/leader/publish/offline")
+    def publish_offline(_: bool = Depends(leader)):
+        for summary in list_archives(settings.data_dir):
+            set_online(summary["name"], False)
+        publisher.sync()
+        return {"status": publisher.status}
+
+    @app.get("/api/leader/publish/site.zip")
+    def publish_zip(_: bool = Depends(leader)):
+        return Response(online.site_zip(settings.data_dir, publisher.settings()), media_type="application/zip",
+                        headers={"Content-Disposition": 'attachment; filename="scout-games-site.zip"'})
+
+    preview_dir = settings.data_dir / "site-preview"
+
+    @app.post("/api/leader/publish/preview")
+    def publish_preview(_: bool = Depends(leader)):
+        online.build_site(settings.data_dir, preview_dir, publisher.settings())
+        return {"url": "/leader/site-preview/index.html"}
+
+    @app.get("/leader/site-preview/{path:path}", include_in_schema=False)
+    def site_preview(path: str, lead: bool = Depends(is_leader)):
+        if not lead:
+            raise HTTPException(404)
+        target = (preview_dir / (path or "index.html")).resolve()
+        if target.is_dir():
+            target = target / "index.html"
+        if not target.is_file() or preview_dir.resolve() not in target.parents:
+            raise HTTPException(404)
+        headers = {"Cache-Control": "no-store"}
+        if "/games/" in path:
+            headers["Content-Security-Policy"] = PLAY_CSP
+        return FileResponse(target, headers=headers)
+
+    @app.post("/api/leader/demo-team")
+    def demo_team(response: Response, _: bool = Depends(leader)):
+        """Log this browser in as the leaders' demo team, for showing scouts how the studio works."""
+        t = db.one("SELECT id, name, emoji, token FROM teams WHERE demo=1 ORDER BY id LIMIT 1")
+        if not t:
+            name = "Leaders' demo"
+            while db.one("SELECT id FROM teams WHERE name=?", (name,)):
+                name += " ⭐"
+            token = secrets.token_urlsafe(24)
+            team_id = db.execute("INSERT INTO teams(name, emoji, pin, token, demo, created_at) VALUES(?,?,?,?,1,?)",
+                                 (name, "🧭", f"{secrets.randbelow(10000):04d}", token, now()))
+            t = {"id": team_id, "name": name, "emoji": "🧭", "token": token}
+        set_cookie(response, "scout_team", t["token"])
+        return {"team": {k: t[k] for k in ("id", "name", "emoji")}}
 
     @app.post("/api/leader/warmup")
     def warmup(_: bool = Depends(leader)):
